@@ -1,0 +1,80 @@
+<!DOCTYPE html>             <!-- Declare that this an HTML5 document. -->
+<html lang="en">            <!-- Declare the content language. -->
+<head>
+    <meta charset="utf-8">  <!-- Declare the document's character set. -->
+    <title>Assassin Player App</title>   <!-- Set the page title.  Will be displayed at the top of the browser window and in bookmarks.  -->
+    <link rel="stylesheet" href="index.css">    <!-- Include styles from index.css. -->
+</head>
+
+<!--  Start body -->
+
+  <body>
+    Assassin Player Application
+
+    <br><br>
+    <!--  Message Label frequently updated -->
+    <span id="myIdLabel">My ID: </span><span id = "myId"></span><br>
+    <span id="myNameLabel">My Name: </span><span id = "myName"></span><br>
+    <span id="myStatusLabel">My Status: </span><span id = "myStatus"></span><br>
+    <span id="myOwedLabel">Owed: </span><span id = "myOwed"></span><br>
+    <span id="myTotalLabel">Total: </span><span id = "myTotal"></span><br>
+    <span id="myTargetLabel">My Target's Name: </span><span id = "myTargetsName"></span><br>
+    <span id="gameStatusLabel">Game Status: </span><span id = "gameStatus"></span>
+
+    <br>
+    <br>
+    <div id = "messageBoard"></div>
+    <br>
+
+    <!--  Player Data  -->
+    <span id="myIdInputLabel">ID: </span><input type="text" id="idInputBox" value="12345678">  <br>
+
+    <br><br>
+    <button id="logInButton">Log In</button> <br><br>
+    <button id="logOffButton">Log Off</button> <br><br>
+    <button id="takeABreakButton">Take a Break</button>
+    <button id="returnFromBreakButton">Return From Break</button>
+
+    <button id="confirmAssassinationButton">Confirm Assassination</button><br>
+    <span id="myNameOfTargetsTargetLabel">Name of your target's target: </span><input type="text" id="targetsTargetNameInputBox" value="">   <br>
+    <br><br>
+
+    <button id="buyBackInButton">Buy Back In</button><br>
+    <br><br>
+
+    <span id="playerPictureInputLabel">Choose a Picture</span>
+    <input type="file" id="playerPictureInput">
+    <br><br>
+    <button id="uploadPictureButton">Upload Picture</button><br>
+    <br><br>
+    <button id="viewMyPictureButton">View My Picture</button> <br><br>
+    <br>
+
+    <br>
+    <div id="myTargetsPictureLabel">My Target's Picture:</div>
+    <img id="targetPicture" src=""><br>
+
+
+    <br>
+    <br>
+    <div id="myPictureLabel">My Picture:</div>
+    <img id="myPicture" src=""><br>
+
+
+
+    <!-- <img id="targetPicture" src="" height="180" width="150"><br>  -->
+    <!-- ***  Start aside section ****  -->
+    <aside>
+    </aside>
+    <script src="https://www.gstatic.com/firebasejs/5.3.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-messaging.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-functions.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/5.5.3/firebase-storage.js"></script>
+
+    <script src="index.js"></script>    <!-- Include index.js as a JavaScript script file. -->
+  </body>
+
+</html>

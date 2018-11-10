@@ -1,0 +1,31 @@
+body
+{
+    background-color:   red;
+}
+
+aside
+{
+    background-color: 		yellow;
+    float:                right;
+    width:                500px;
+}
+
+#logOffButton
+{
+  visibility: hidden;
+}
+
+#confirmAssassinationButton
+{
+  visibility: hidden;
+}
+
+#myNameOfTargetsTargetLabel
+{
+  visibility: hidden;
+}
+
+#targetsTargetNameInputBox
+{
+  visibility: hidden;
+}
