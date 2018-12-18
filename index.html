@@ -10,13 +10,12 @@
 
   <body>
     Assassin Player Application
-
     <br><br>
     <!--  Message Label frequently updated -->
-    <span id="myIdLabel">My ID: </span><span id = "myId"></span><br>
+    <span id="myIdLabel">My ID: </span><span id = "myId"></span>  &nbsp &nbsp
     <span id="myNameLabel">My Name: </span><span id = "myName"></span><br>
     <span id="myStatusLabel">My Status: </span><span id = "myStatus"></span><br>
-    <span id="myOwedLabel">Owed: </span><span id = "myOwed"></span><br>
+    <span id="myOwedLabel">Owed: </span><span id = "myOwed"></span> &nbsp &nbsp
     <span id="myTotalLabel">Total: </span><span id = "myTotal"></span><br>
     <span id="myTargetLabel">My Target's Name: </span><span id = "myTargetsName"></span><br>
     <span id="gameStatusLabel">Game Status: </span><span id = "gameStatus"></span>
@@ -27,40 +26,33 @@
     <br>
 
     <!--  Player Data  -->
-    <span id="myIdInputLabel">ID: </span><input type="text" id="idInputBox" value="12345678">  <br>
+    <span id="myIdInputLabel">ID: </span><input type="text" id="idInputBox" value="12345678"> &nbsp
+    <button id="logInButton">Log In</button> <button id="buyBackInButton">Buy Back In</button> <button id="registerButton">Register</button> &nbsp <button id="quitGameButton">Quit Game</button> &nbsp <button id="volunteerButton">Volunteer</button><br>
+    <span id="myRegisterNameLabel">Name: </span><input type="text" id="nameInputBox" value=""> <br>
 
-    <br><br>
-    <button id="logInButton">Log In</button> <br><br>
-    <button id="logOffButton">Log Off</button> <br><br>
-    <button id="takeABreakButton">Take a Break</button>
-    <button id="returnFromBreakButton">Return From Break</button>
+    <!--  Registration Radio Buttons - ASAP or Scheduled  -->
+    <form id="registrationTypes" action="">
+      <input type="radio" name="registration"checked="checked" id="registerASAP"><span id="registrationLabelASAP">ASAP</span>
+      <input type="radio" name="registration" id="registerSchedule"><span id="registrationLabelScheduled">Scheduled</span><br>
+    </form>
 
+    <button id="logOffButton">Log Off</button> &nbsp &nbsp <button id="takeABreakButton">Take a Break</button> <br>
+    <button id="returnFromBreakButton">Return From Break</button> <br>
+
+    <span id="myNameOfTargetsTargetLabel">Name of your target's target: </span><input type="text" id="targetsTargetNameInputBox" value=""> <br>
     <button id="confirmAssassinationButton">Confirm Assassination</button><br>
-    <span id="myNameOfTargetsTargetLabel">Name of your target's target: </span><input type="text" id="targetsTargetNameInputBox" value="">   <br>
-    <br><br>
-
-    <button id="buyBackInButton">Buy Back In</button><br>
-    <br><br>
-
-    <span id="playerPictureInputLabel">Choose a Picture</span>
-    <input type="file" id="playerPictureInput">
-    <br><br>
-    <button id="uploadPictureButton">Upload Picture</button><br>
-    <br><br>
-    <button id="viewMyPictureButton">View My Picture</button> <br><br>
-    <br>
-
     <br>
     <div id="myTargetsPictureLabel">My Target's Picture:</div>
     <img id="targetPicture" src=""><br>
-
-
     <br>
+    <span id="playerPictureInputLabel">Choose your picture</span>
+    <input type="file" id="playerPictureInput">
+    <br><br>
+    <button id="uploadPictureButton">Upload Your Picture</button><br>
     <br>
+    <button id="viewMyPictureButton">View My Picture</button> <br><br>
     <div id="myPictureLabel">My Picture:</div>
     <img id="myPicture" src=""><br>
-
-
 
     <!-- <img id="targetPicture" src="" height="180" width="150"><br>  -->
     <!-- ***  Start aside section ****  -->
