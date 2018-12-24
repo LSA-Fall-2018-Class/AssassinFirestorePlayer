@@ -44,6 +44,11 @@ const PLAYER_STATUS_UNKNOWN_TEXT = "Unknown Status";
 const REGISTERED_ASAP = 0;      // enter game as soon as possible
 const REGISTERED_SCHEDULED = 1; // wait to enter game until scheduled start
 
+// Screen labels
+const MY_TARGETS_PICTURE_LABEL = "My Target's Picture:";
+const MY_PICTURE_LABEL = "My Picture:"
+
+// Events
 const EVENT_TYPE_LOGIN = 3;
 const EVENT_TYPE_INCORRECT_LOGIN = 4;
 const EVENT_TYPE_LOGOFF = 5;
@@ -59,10 +64,14 @@ const EVENT_TYPE_ACTIVATED = 19;
 const EVENT_TYPE_WAITING = 20;
 const EVENT_TYPE_VOLUNTEERED = 21;
 
+// General constants
 const OFF = 0;
 const ON = 1;
 const MIN_LENGTH_BREAK_DEFAULT = 2; // number of minutes minimum break length
+const PIC_MISSING_TARGET = 1;
+const PIC_MISSING_MINE = 2;
 
+// Message Text Constants - Find similar and clean up.
 const MESSAGE_TEXT_LOGIN = "Successul log in.";
 const MESSAGE_TEXT_LOGIN_FAILED = "Player login failed. id = ";
 const MESSAGE_TEXT_LOGOFF = "Successful log off.";
@@ -87,20 +96,14 @@ const MESSAGE_TEXT_CANT_REGISTER_GAME_OVER = "You can't register, the game is ov
 const MESSAGE_TEXT_PLAYER_ALREADY_EXISTS = "You generated a random number for a player that already exists.  Click Register again.";
 const MESSAGE_TEXT_VOLUNTEERED = "Successful volunteer.  You are inactive, but can buy back in.";
 const MESSAGE_TEXT_SCHEDULED = "You are scheduled to enter the game.";
-
-const MY_TARGETS_PICTURE_LABEL = "My Target's Picture:";
-const MY_PICTURE_LABEL = "My Picture:"
+const MESSAGE_TEXT_FATAL_ERROR = "Fatal Error - Connection to DB.  Contact Admin.";
 const MESSAGE_TEXT_UPLOAD_PIC_FAILED = "Upload picture failed.";
 const MESSAGE_TEXT_UPLOAD_PIC_SUCCESS = "Upload picture success."
-
 const MESSAGE_TEXT_FILE_NOT_FOUND = "File not found."
 const MESSAGE_TEXT_PICTURE_NOT_FOUND = "My Picture file not found.";
 const MESSAGE_TEXT_TARGET_PICTURE_NOT_FOUND = "Target Picture Not Found.";
 const MESSAGE_TEXT_VOLUNTEER_NEEDED = "Click the volunteer button to exit the game with a refund of 1 bounty.";
 const MESSAGE_TEXT_CANT_VOLUNTEER = "Only active players can volunteer to move to inactive status.";
-
-const PIC_MISSING_TARGET = 1;
-const PIC_MISSING_MINE = 2;
 
 // ----- Initialize Firebase -----------------------------------------------------
 // Get the config info from the database settings area on your firestore database
@@ -147,13 +150,8 @@ var storageRef = storage.ref();
 
 // -----  end init firebase ---------------------------------------
 
-// Turn off controls
-
+// Turn off controls - Trying to get rid of flicker - Error Check
 document.getElementById("buyBackInButton").style.visibility = "hidden";
-
-
-
-
 
 // Global vars to hold player data
 var id;
@@ -171,10 +169,11 @@ var myPicFileName;
 
 // data from Game Data on db
 var minBreakLength = MIN_LENGTH_BREAK_DEFAULT;
-var volunteerNeeded = false;  // used for scheduled starts
+// var volunteerNeeded = false;  // didn't need afterall
 var nextScheduledStart = "";
 var myRegistrationType; // either asap or Scheduled
 
+// unsubscribe global vars
 var playerUnsubscribe;  // var to store player subscription, needed for later unSubscribe
 var linkUnsubscribe;    // var to store link subscription
 var gameDataUnsubscribe;  // var to store game data subscription
@@ -184,10 +183,12 @@ var lastEvent;  // for event tracking
 // create reference to message board
 var message = document.getElementById("messageBoard");
 
+// ------------------------------------------------------------------
+// Start of actual code ---------------------------------------------
+
 // Handle Game Data
 // get game status and update field,  create a reference to the document
 var gameDataRef = db.collection("gameData").doc("gameData");
-console.log("About to set game data subscriber");
 gameDataRef.get().then(function(doc)
 {
   if (doc.exists)
@@ -196,49 +197,63 @@ gameDataRef.get().then(function(doc)
 
       // update needed here or nearby - need to create a listener on game status
       document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
+      console.log("Game status is " + decodeGameStatus(gameStatus));
 
       if (doc.data().status == GAME_STATUS_COMPLETED)
       {
         status = PLAYER_STATUS_GAME_OVER;
       }
 
+      // if min break length doesn't exist in db, default to value set here in code
       if (doc.data().minBreakLength == 0)
         minBreakLength = MIN_LENGTH_BREAK_DEFAULT;
       else
         minBreakLength = doc.data().minBreakLength;
 
-      nextScheduledStart = doc.data().nextScheduledStart;
-
       console.log("Min break length is " + minBreakLength);
+
+      // store next scheduled start in global var
+      nextScheduledStart = doc.data().nextScheduledStart;
 
       renderGame(status);
 
+  }  // end if gameData doc exists
+  else
+  {
+    message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+    console.log("Error getting gameRefData.get() document:", error);
   }
 }).catch(function(error) {
+  message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
   console.log("Error getting gameRefData.get() document:", error);
   });
 
+// --------------------------------------------------------------------------
 // subscribe to change in game status **************  Subscribe *************
+
 gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
 {
     console.log("Subscriber on game status change called. Current status is " + decodeGameStatus(gameStatus) + " New status is " + decodeGameStatus(doc.data().status));
 
     if (doc.exists)
     {
+        // turn on or off volunteer button
         if (doc.data().volunteerNeeded == true)
         {
           document.getElementById("volunteerButton").style.visibility = "visible";
           message.innerHTML = MESSAGE_TEXT_VOLUNTEER_NEEDED;
         }
-        else {
+        else
+        {
           document.getElementById("volunteerButton").style.visibility = "hidden";
         }
 
+        // update global vars
         nextScheduledStart = doc.data().nextScheduledStart;
-
-        // update needed here or nearby - need to create a listener on game status
-        document.getElementById("gameStatus").innerHTML = decodeGameStatus(doc.data().status);
         gameStatus = doc.data().status;
+
+        // update game status on screen
+        document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
 
         switch (gameStatus)
         {
@@ -301,7 +316,9 @@ gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
         }
 
     } // end if doc exists
-    else {
+    else
+    {
+      message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
       console.log("Game data doc was deleted in subscribe.");
       // error handling
     }
@@ -315,12 +332,8 @@ function getScreenData()
 {
   // Grab data from input boxes and store in global vars
   id = document.getElementById("idInputBox").value;
-  // name = document.getElementById("nameInputBox").value;
-  // status = document.getElementById("statusInputBox").value;
-  // target = document.getElementById("targetInputBox").value;
   nameOfTargetsTarget = document.getElementById("targetsTargetNameInputBox").value;
   name = document.getElementById("nameInputBox").value;
-  //console.log("Form data: id = " + id + "  Name = " + name + "  status = " + status + "  target = " + target + "  name of targets target = " + nameOfTargetsTarget );
 }
 
 // --------------------------------------------------------------
@@ -329,10 +342,8 @@ function getScreenData()
 registerButton.addEventListener('click', function (e)
 {
       // check if game is available to register
-
       // get game status and update field,  create a reference to the document
       var gameDataRef = db.collection("gameData").doc("gameData");
-      console.log("About to set game data subscriber");
       gameDataRef.get().then(function(doc)
       {
           if (doc.exists)
@@ -358,6 +369,7 @@ registerButton.addEventListener('click', function (e)
                   var tempId = "";
                   var i;
 
+                  // loop through, creating 1 random digit at a time
                   for (i=0; i<ID_LENGTH; i++)
                   {
                     tempId += String(Math.floor(Math.random() * 10));
@@ -386,23 +398,21 @@ registerButton.addEventListener('click', function (e)
                       // Check if game is not started, if yes, then put in Register ASAP, else read choice from radio button
                       if (gameStatus == GAME_STATUS_NOT_STARTED)
                       {
-                          console.log("Game status is not started");
+                          console.log("Game status is 'not started'");
                           myRegistrationType = REGISTERED_ASAP;
                       }
                       else
                       {
-                          console.log("Game status is not - not started");
+                          console.log("Game status is not - 'not started'");
                           // get the choice from the screen
                           var myForm = document.getElementById("registrationTypes");
 
                           if (myForm.registration[0].checked == true)
                           {
-                              console.log("Got here asap");
                               myRegistrationType = REGISTERED_ASAP;
                           }
                           else
                           {
-                              console.log("Got here scheduled");
                               myRegistrationType = REGISTERED_SCHEDULED;
                           }
 
@@ -432,9 +442,6 @@ registerButton.addEventListener('click', function (e)
 
                   }); // player ref get, check if player exists
 
-                  // reset input boxes
-                  resetInputBoxes();
-
               }   // end else - continue with registration
 
           } // end if doc exists - needs error checking
@@ -447,10 +454,25 @@ registerButton.addEventListener('click', function (e)
 
 // --------------------------------------------------------------
 // Log into the game
+// Allow player to log in even when game is over - check stats
 
 logInButton.addEventListener('click', function (e)
 {
     getScreenData();
+
+    // get game status here and display on screen
+    var gameDataRef = db.collection("gameData").doc("gameData");
+    gameDataRef.get().then(function(doc)
+    {
+      if (doc.exists)
+      {
+          gameStatus = doc.data().status;
+
+          // update needed here or nearby - need to create a listener on game status
+          document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
+          console.log("Game status is " + decodeGameStatus(gameStatus));
+      }
+    });
 
     // create a reference to the document
     var playerRef = db.collection("players").doc(id);
@@ -476,10 +498,11 @@ logInButton.addEventListener('click', function (e)
           owed = doc.data().owed;
           loggedIn = true;
 
+          // ****************** Subscribe *****************************************************************************
           // create listener on my player record, change in status is important **************  Subscribe *************
           playerUnsubscribe = playerRef.onSnapshot(function(doc)
           {
-                // removed Workaround code - Only handle a call if player name is mine, not an old log in
+                // removed Workaround code with unsubscribe working - Only handle a call if player name is mine, not an old log in
                 //if ((doc.exists) && (doc.data().name == name))
                 if (doc.exists)
                 {
@@ -509,29 +532,30 @@ logInButton.addEventListener('click', function (e)
                     // Either I was assassinated or I volunteered to go to inactive
                     if ((status == PLAYER_STATUS_ACTIVE) && (doc.data().status == PLAYER_STATUS_INACTIVE))
                     {
-                      if (iVolunteered == false)
-                      {
-                        console.log(MESSAGE_TEXT_ASSASSINATED);
-                        message.innerHTML = MESSAGE_TEXT_ASSASSINATED;
-                        lastEvent = EVENT_TYPE_ASSASSINATED;
-                      }
-                      else
-                      {
-                        console.log(MESSAGE_TEXT_VOLUNTEERED);
-                        message.innerHTML = MESSAGE_TEXT_VOLUNTEERED;
-                        lastEvent = EVENT_TYPE_VOLUNTEERED;
-                      }
+                        // assassinated
+                        if (iVolunteered == false)
+                        {
+                          console.log(MESSAGE_TEXT_ASSASSINATED);
+                          message.innerHTML = MESSAGE_TEXT_ASSASSINATED;
+                          lastEvent = EVENT_TYPE_ASSASSINATED;
+                        }
+                        else  // I did volunteer
+                        {
+                          console.log(MESSAGE_TEXT_VOLUNTEERED);
+                          message.innerHTML = MESSAGE_TEXT_VOLUNTEERED;
+                          lastEvent = EVENT_TYPE_VOLUNTEERED;
+                          iVolunteered = false;   // flip back to false
+                        }
 
-                      status = PLAYER_STATUS_INACTIVE;
-                      /// update status on screen here?
-                      renderGame(PLAYER_STATUS_INACTIVE);
-                      return;
+                        status = PLAYER_STATUS_INACTIVE;
+                        renderGame(PLAYER_STATUS_INACTIVE);
+
+                        return;
                     }
 
-                    // I was moved from queue into the game
+                    // I was moved from queue into the game - Error Check - PLAYER_STATUS_REGISTERED doesn't make sense here.
                     if (((status == PLAYER_STATUS_WAITING) || (status == PLAYER_STATUS_REGISTERED)) && (doc.data().status == PLAYER_STATUS_ACTIVE))
                     {
-                        // console.log(MESSAGE_TEXT_ACTIVATED);
                         console.log("Player change subscribe called - going from waiting or registered to active. global id is " + id);
 
                         message.innerHTML = MESSAGE_TEXT_ACTIVATED;
@@ -548,17 +572,16 @@ logInButton.addEventListener('click', function (e)
 
                         myLinkRef.get().then(function(doc)
                         {
-                          console.log("Moved to active - Right after myLinkRef.get");
-
                           if (doc.exists)
                           {
                               console.log("Moved to active - Right after myLinkRef.get then doc.exists");
 
-                              //  subscribe on the new link that was created ************************
+                              // ************************************************************************************
+                              // subscribe on the new link that was created ****************************************
+                              // 1 of 2 places in the code - Player updated to active in listener
                               linkUnsubscribe = myLinkRef.onSnapshot(function(doc)
                               {
-                                    // console.log("My link listener called on the way in - within waiting to queue change.");
-
+                                    // console.log("My link listener called on the way in - within Log In.");
                                     if (doc.exists)  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
                                     {
                                         console.log("My link listener called - Doc exists - within waiting to queue change");
@@ -645,23 +668,27 @@ logInButton.addEventListener('click', function (e)
                                       document.getElementById("myTargetsPictureLabel").innerHTML = MY_TARGETS_PICTURE_LABEL;
 
                                     }).catch(function(error)
-                                      {
+                                    {
                                         decodeFileErrorCode(error,PIC_MISSING_TARGET);
                                         document.getElementById("targetPicture").src = "";
-                                      }); // end catch error
+                                    }); // end catch error
 
                                 } // end if doc exists
                                 else {
+                                  message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+                                  console.log("Error getting my targets player document within player subscribe data change:", error);
                                   // my target's player record doesn't exist
                                 }
                               }); // end .get on target's player record
                               //  need error catching here
 
                           } // end if doc exists on search for my link record
-                          else {
-                            console.log("My link doesn't exist yet.");
-                            // my link record doesn't exist
-                          }
+                          else
+                          {
+                              message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+                              console.log("My link doc doesn't exist within player data subscribe:", error);
+                              // my link record doesn't exist
+                          } // end else my link doc doesn't exist
 
                         }); // end .get on my link
                         //  error checking here
@@ -686,7 +713,7 @@ logInButton.addEventListener('click', function (e)
                     if ( (status == PLAYER_STATUS_WAITING) && doc.data().status == PLAYER_STATUS_WAITING)
                     {
                         // ignore, no status change zzz - this is one of those where maybe I can filter on the change type
-                        console.log("How could this ever get called.?");
+                        console.log("Maybe this gets called on the initial creation of the listener?");
                         return;
                     }
 
@@ -705,7 +732,7 @@ logInButton.addEventListener('click', function (e)
                 else
                 {
                   console.log("Player subscribe called but no doc - Must have been deleted.");
-                  // logoffUser();  -  Not sure why this is here
+
                   if (!doc.exists)
                     logoffUser();
 
@@ -774,7 +801,9 @@ logInButton.addEventListener('click', function (e)
                     }); // end .get on target's player record
                     //  need error catching here
 
+                    // ************************* Subscribe ************************************
                     // create Listener to my link reference ******** Subscribe ************************************
+                    // 2 of 2 places in code for this subscribe.  This one is Log In and Active.
                     linkUnsubscribe = myLinkRef.onSnapshot(function(doc)
                     {
                         if (doc.exists)
@@ -872,6 +901,7 @@ logInButton.addEventListener('click', function (e)
       else
       {
         message.innerHTML = MESSAGE_TEXT_LOGIN_FAILED + id;
+        console.log("Login failed.  Doc doesn't exist.");
       }
 
     }).catch(function(error) {
@@ -891,7 +921,6 @@ logOffButton.addEventListener('click', function (e)
 
 function logoffUser()
 {
-    loggedIn = false;
     document.getElementById("myId").innerHTML = "";
     document.getElementById("myName").innerHTML = "";
     document.getElementById("myStatus").innerHTML = "";
@@ -924,6 +953,8 @@ function logoffUser()
     nameOfTargetsTarget = "";
     myLinkRef = ""; // reference to my link in the chain
     myPicFileName = "";
+    loggedIn = false;
+    iVolunteered = false;
 
     renderGame(PLAYER_STATUS_LOGGED_OFF);
 
@@ -1737,6 +1768,8 @@ volunteerButton.addEventListener('click', function (e)
 {
     iVolunteered = true;
 
+    // error checking for near simultaneous volunteers - get var from db first and check?  Might help?
+
     // flip db var to false
     db.collection("gameData").doc("gameData").update({
       volunteerNeeded: false
@@ -1845,8 +1878,7 @@ function processVolunteer()
                 // Grab scheduled queue first
                 var tempArray = new Array;
 
-                // zzzz
-                // Check the waiting queue before rebuilding chain - get the waiting queue
+                // Check the sched queue before rebuilding chain - get the waiting queue
                 var schedQueueRef = db.collection("queues").doc("scheduled");
                 schedQueueRef.get().then(function(doc)
                 {
@@ -1890,7 +1922,6 @@ function processVolunteer()
                           tempArray[index1] = tempArray[index2];
                           tempArray[index2] = tempPlayer;
                         }
-
 
                         console.log("About to assign my assassin in process volunteer.");
                         // assign the person that had me to the first person in the queue
@@ -2506,44 +2537,44 @@ function renderGame(myStatus)
   {
     case PLAYER_STATUS_LOGGED_OFF:
 
-      document.getElementById("volunteerButton").style.visibility = "hidden";
-      console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-      message.innerHTML = "";
-      updateLogInControls(ON);
-      updateActiveControls(OFF);
-      break;
+        document.getElementById("volunteerButton").style.visibility = "hidden";
+        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
+        message.innerHTML = "";
+        updateLogInControls(ON);
+        updateActiveControls(OFF);
+        break;
 
     case PLAYER_STATUS_WAITING:
+
         console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         message.innerHTML = MESSAGE_TEXT_WAITING;
-        updateLogInControls(OFF);
-        updateActiveControls(OFF);
-
         document.getElementById("takeABreakButton").style.visibility = "visible";
         document.getElementById("returnFromBreakButton").style.visibility = "hidden";
         document.getElementById("buyBackInButton").style.visibility = "hidden";
-
-      break;
+        updateLogInControls(OFF);
+        updateActiveControls(OFF);
+        break;
 
     case PLAYER_STATUS_SCHEDULED:
-          console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-          message.innerHTML = MESSAGE_TEXT_SCHEDULED;
-          updateLogInControls(OFF);
-          updateActiveControls(OFF);
 
-          document.getElementById("takeABreakButton").style.visibility = "visible";
-          document.getElementById("returnFromBreakButton").style.visibility = "hidden";
-          document.getElementById("buyBackInButton").style.visibility = "hidden";
-
+        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
+        message.innerHTML = MESSAGE_TEXT_SCHEDULED;
+        document.getElementById("takeABreakButton").style.visibility = "visible";
+        document.getElementById("returnFromBreakButton").style.visibility = "hidden";
+        document.getElementById("buyBackInButton").style.visibility = "hidden";
+        updateLogInControls(OFF);
+        updateActiveControls(OFF);
         break;
 
     case PLAYER_STATUS_ACTIVE:
+
         console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateLogInControls(OFF);
         updateActiveControls(ON);
-      break;
+        break;
 
     case PLAYER_STATUS_INACTIVE:
+
         console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateLogInControls(OFF);
         updateActiveControls(OFF);
@@ -2552,46 +2583,49 @@ function renderGame(myStatus)
         // if I'm owed, show buy back in button
         if (owed > 0)
         {
-            // zzzz
-            console.log("If this gets run bbi was run.");
             document.getElementById("buyBackInButton").style.visibility = "visible";
+
+            // not sure I need these 2 below
             document.getElementById("myTotal").style.visibility = "visible";
             document.getElementById("myOwed").style.visibility = "visible";
         }
-      break;
+        break;
 
       case PLAYER_STATUS_BREAK:
+
         console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         message.innerHTML = MESSAGE_TEXT_TAKE_BREAK;
+        document.getElementById("returnFromBreakButton").style.visibility = "visible";
         updateLogInControls(OFF);
         updateActiveControls(OFF);
-        document.getElementById("returnFromBreakButton").style.visibility = "visible";
-      break;
-
+        break;
 
     case PLAYER_STATUS_REGISTERED:
+
         console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateActiveControls(OFF);
 
+        // if player has already logged in, turn off log in controls and enable pictures
         if (loggedIn == true)
         {
           updateLogInControls(OFF);
           enablePictures();
         }
-        else
+        else // Player is not logged in.  Turn on log in controls
         {
             message.innerHTML = MESSAGE_TEXT_REGISTER_PLAYER + id + " Name is " + name + ". Log in to upload a picture.";
             document.getElementById("idInputBox").value = id;
             updateLogInControls(ON);
         }
 
-      break;
+        break;
 
     case PLAYER_STATUS_GAME_OVER:
+
         message.innerHTML = MESSAGE_TEXT_GAME_COMPLETED;
         document.getElementById("myStatus").innerHTML = decodePlayerStatus(myStatus);
-        updateActiveControls(OFF);
         document.getElementById("quitGameButton").style.visibility = "hidden";
+        updateActiveControls(OFF);
         break;
 
     default:
