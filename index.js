@@ -7,8 +7,14 @@ const FIRESTORE_DB_2 = 2;
 var firebaseDB = FIRESTORE_DB_1;
 
 const ENTER_KEY = 13; // intercept enter key for default processing
-const ID_LENGTH = 8;
+const PLAYER_ID_LENGTH = 8;   // length of player id
 const OWED_STARTER = 0;
+const SCROLLING_MESSAGE_LENGTH = 3;
+
+const SYSTEM_ID = "SYSTEM";
+
+const ERROR_GAME_DATA_REF_DOESNT_EXIST = "Game Data doc doesn't exist";
+const ERROR_GAME_DATA_REF_GET_FAILED = "Game Data Get Failed.";
 
 // game status constants
 const GAME_STATUS_NOT_STARTED = 0;
@@ -23,22 +29,24 @@ const GAME_STATUS_COMPLETED_TEXT = "Completed";
 const GAME_STATUS_UNKNOWN_TEXT = "Unknown Status";
 
 // Player status constants
-const PLAYER_STATUS_LOGGED_OFF = -1;
+const PLAYER_STATUS_LOGGED_OFF = 0;
 const PLAYER_STATUS_LOGGED_OFF_TEXT = "Logged Off";
-const PLAYER_STATUS_WAITING = 0;
-const PLAYER_STATUS_WAITING_TEXT = "Waiting";
-const PLAYER_STATUS_ACTIVE = 1;
-const PLAYER_STATUS_ACTIVE_TEXT = "Active";
-const PLAYER_STATUS_INACTIVE = 2;
-const PLAYER_STATUS_INACTIVE_TEXT = "Inactive";
-const PLAYER_STATUS_BREAK = 3;
-const PLAYER_STATUS_BREAK_TEXT = "On Break";
-const PLAYER_STATUS_REGISTERED = 4;
+const PLAYER_STATUS_REGISTER_IN_PROGRESS = 1;
+const PLAYER_STATUS_REGISTER_IN_PROGRESS_TEXT = "";
+const PLAYER_STATUS_REGISTERED = 2;
 const PLAYER_STATUS_REGISTERED_TEXT = "Registered";
-const PLAYER_STATUS_SCHEDULED = 5;
+const PLAYER_STATUS_WAITING = 3;
+const PLAYER_STATUS_WAITING_TEXT = "Waiting";
+const PLAYER_STATUS_SCHEDULED = 4;
 const PLAYER_STATUS_SCHEDULED_TEXT = "Scheduled";
-const PLAYER_STATUS_GAME_OVER = 6;
-const PLAYER_STATUS_GAME_OVER_TEXT = "Game Over";
+const PLAYER_STATUS_ACTIVE = 5;
+const PLAYER_STATUS_ACTIVE_TEXT = "Active";
+const PLAYER_STATUS_INACTIVE = 6;
+const PLAYER_STATUS_INACTIVE_TEXT = "Inactive";
+const PLAYER_STATUS_BREAK = 7;
+const PLAYER_STATUS_BREAK_TEXT = "On Break";
+const PLAYER_STATUS_GAME_OVER = 8;
+const PLAYER_STATUS_GAME_OVER_TEXT = "Game Completed";
 const PLAYER_STATUS_UNKNOWN_TEXT = "Unknown Status";
 
 const REGISTERED_ASAP = 0;      // enter game as soon as possible
@@ -72,11 +80,13 @@ const PIC_MISSING_TARGET = 1;
 const PIC_MISSING_MINE = 2;
 
 // Message Text Constants - Find similar and clean up.
+const MESSAGE_TEXT_WELCOME = "Welcome to Assassin.  Click Login or Register.";
 const MESSAGE_TEXT_LOGIN = "Successul log in.";
 const MESSAGE_TEXT_LOGIN_FAILED = "Player login failed. id = ";
 const MESSAGE_TEXT_LOGOFF = "Successful log off.";
+const MESSAGE_TEXT_PLAYER_LOGGED_OFF = "Player currently logged off";
 const MESSAGE_TEXT_CONFIRM_BOUNTY = "Bounty Confirmed!";
-const MESSAGE_TEXT_BOUNTY_FAILED = "Confirm Bounty Failed.";
+const MESSAGE_TEXT_BOUNTY_FAILED = "Confirm Bounty Failed. Bad name entered was ";
 const MESSAGE_TEXT_BUY_BACK_IN = "Successful re-buy.";
 const MESSAGE_TEXT_PING_TARGET = "Are you still at PorcFest?";  // not implemented yet
 const MESSAGE_TEXT_ANSWER_PING = "Yes, I'm still at PorcFest.";  // not implemented yet
@@ -104,6 +114,11 @@ const MESSAGE_TEXT_PICTURE_NOT_FOUND = "My Picture file not found.";
 const MESSAGE_TEXT_TARGET_PICTURE_NOT_FOUND = "Target Picture Not Found.";
 const MESSAGE_TEXT_VOLUNTEER_NEEDED = "Click the volunteer button to exit the game with a refund of 1 bounty.";
 const MESSAGE_TEXT_CANT_VOLUNTEER = "Only active players can volunteer to move to inactive status.";
+const MESSAGE_TEXT_TOO_EARLY_TO_RETURN_FROM_BREAK = "Too early to return from break.";
+const MESSAGE_TEXT_CANT_TAKE_BREAK = "You can only take a break when active.";
+const MESSAGE_TEXT_LOGIN_CANT_RETURN_FROM_BREAK = "You are not on break.  Can't return.";
+const MESSAGE_TEXT_VOLUNTEER_FILLED = "Volunteer request filled.";
+const MESSAGE_TEXT_ENTER_YOUR_NAME_TO_REGISTER = "Enter your name, choose ASAP or Scheduled start, and click Register.  The next scheduled start is ";
 
 // ----- Initialize Firebase -----------------------------------------------------
 // Get the config info from the database settings area on your firestore database
@@ -160,6 +175,7 @@ var status = PLAYER_STATUS_LOGGED_OFF;  // player status
 var gameStatus = GAME_STATUS_NOT_STARTED;  // default
 var loggedIn = false;
 var iVolunteered = false;
+var registrationInProgress = false; // Registration is 2 part process
 // var target;  -  looks like I don't need this
 
 var owed;
@@ -169,7 +185,7 @@ var myPicFileName;
 
 // data from Game Data on db
 var minBreakLength = MIN_LENGTH_BREAK_DEFAULT;
-// var volunteerNeeded = false;  // didn't need afterall
+var volunteerNeeded = false;
 var nextScheduledStart = "";
 var myRegistrationType; // either asap or Scheduled
 
@@ -178,10 +194,13 @@ var playerUnsubscribe;  // var to store player subscription, needed for later un
 var linkUnsubscribe;    // var to store link subscription
 var gameDataUnsubscribe;  // var to store game data subscription
 
-var lastEvent;  // for event tracking
+// var lastEvent;  // for event tracking, not using now
 
-// create reference to message board
-var message = document.getElementById("messageBoard");
+// create an array of messages for display to message board, grab reference to screen message board
+var messages = new Array;
+var screenMessage = document.getElementById("messageBoard");
+
+var errors = db.collection("errors");
 
 // ------------------------------------------------------------------
 // Start of actual code ---------------------------------------------
@@ -189,20 +208,17 @@ var message = document.getElementById("messageBoard");
 // Handle Game Data
 // get game status and update field,  create a reference to the document
 var gameDataRef = db.collection("gameData").doc("gameData");
+
 gameDataRef.get().then(function(doc)
 {
   if (doc.exists)
   {
       gameStatus = doc.data().status;
+      volunteerNeeded = doc.data().volunteerNeeded;
 
       // update needed here or nearby - need to create a listener on game status
       document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
       console.log("Game status is " + decodeGameStatus(gameStatus));
-
-      if (doc.data().status == GAME_STATUS_COMPLETED)
-      {
-        status = PLAYER_STATUS_GAME_OVER;
-      }
 
       // if min break length doesn't exist in db, default to value set here in code
       if (doc.data().minBreakLength == 0)
@@ -215,16 +231,18 @@ gameDataRef.get().then(function(doc)
       // store next scheduled start in global var
       nextScheduledStart = doc.data().nextScheduledStart;
 
+      postMessage(MESSAGE_TEXT_WELCOME)
       renderGame(status);
 
   }  // end if gameData doc exists
   else
   {
-    message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
-    console.log("Error getting gameRefData.get() document:", error);
+    postMessage(MESSAGE_TEXT_FATAL_ERROR);
+    postError(SYSTEM_ID,ERROR_GAME_DATA_REF_DOESNT_EXIST);
   }
 }).catch(function(error) {
-  message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+  postMessage(MESSAGE_TEXT_FATAL_ERROR);
+  postError(SYSTEM_ID,ERROR_GAME_DATA_REF_GET_FAILED);
   console.log("Error getting gameRefData.get() document:", error);
   });
 
@@ -233,94 +251,124 @@ gameDataRef.get().then(function(doc)
 
 gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
 {
-    console.log("Subscriber on game status change called. Current status is " + decodeGameStatus(gameStatus) + " New status is " + decodeGameStatus(doc.data().status));
+    console.log("Within Outer Game - Subscriber on game status change called. Current status is " + decodeGameStatus(gameStatus) + " New status is " + decodeGameStatus(doc.data().status));
 
     if (doc.exists)
     {
-        // turn on or off volunteer button
-        if (doc.data().volunteerNeeded == true)
+        // turn on or off volunteer button - Player needs to be active.
+        if ((doc.data().volunteerNeeded == true) && (status == PLAYER_STATUS_ACTIVE))
         {
           document.getElementById("volunteerButton").style.visibility = "visible";
-          message.innerHTML = MESSAGE_TEXT_VOLUNTEER_NEEDED;
+          postMessage(MESSAGE_TEXT_VOLUNTEER_NEEDED);
+          volunteerNeeded = true;
         }
         else
         {
+          if ((doc.data().volunteerNeeded == false) && (volunteerNeeded == true))
+          {
+              postMessage(MESSAGE_TEXT_VOLUNTEER_FILLED);
+              volunteerNeeded = false;
+          }
+
           document.getElementById("volunteerButton").style.visibility = "hidden";
         }
 
         // update global vars
         nextScheduledStart = doc.data().nextScheduledStart;
-        gameStatus = doc.data().status;
 
-        // update game status on screen
-        document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
-
-        switch (gameStatus)
+        // only process change if status changes, check for other data changes above
+        if (gameStatus != doc.data().status)
         {
-          case GAME_STATUS_COMPLETED:
+            gameStatus = doc.data().status;
 
-              console.log("Game status changed to completed. Subscriber called. Status is " + status);
-              status = PLAYER_STATUS_GAME_OVER;  // player status
-              renderGame(PLAYER_STATUS_GAME_OVER);
-              break;
+            // update game status on screen
+            document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
 
-          case GAME_STATUS_PAUSED:
+            switch (gameStatus)
+            {
+              case GAME_STATUS_COMPLETED:
 
-              message.innerHTML = MESSAGE_TEXT_PAUSED_GAME;
-              console.log("Game status changed to paused. Subscriber called. Status is " + status);
+                  console.log("Game status changed to completed. Subscriber called. Status is " + decodeGameStatus(gameStatus));
+                  status = PLAYER_STATUS_GAME_OVER;  // player status
 
-              // move myself to queue if I'm active, otherwise ignore, could be on break
-              if (status == PLAYER_STATUS_ACTIVE)
-              {
-                  console.log("Paused player status is " + status);
-                  // move to waiting
-                  status = PLAYER_STATUS_WAITING;
+                  // change player status on the db only if logged in.
 
-                  // set my player status to waiting
-                  db.collection("players").doc(id).update({
-                    status: PLAYER_STATUS_WAITING
-                  })
-                  .then(function() {
-                    console.log("Player status set to waiting after game pause.");
-                  })
-                  .catch(function(error) {
-                    console.error("Error Player status set to waiting after game pause.", error);
-                  });
+                  if (loggedIn == true)
+                  {
+                      console.log("Player is logged in.  Updating status on db to player status game over. id is " + id);
+                      // set my player status to waiting
+                      db.collection("players").doc(id).update({
+                        status: PLAYER_STATUS_GAME_OVER
+                      })
+                      .then(function() {
+                        console.log("Player status set to Game Over.");
+                      })
+                      .catch(function(error) {
+                        console.error("Error Player status set to Game Over.", error);
+                      });
+                  }
 
-                  // set waiting queue to just me
-                  var tempList = new Array;
-                  tempList.push(id);
+                  renderGame(PLAYER_STATUS_GAME_OVER);
+                  break;
 
-                  db.collection("queues").doc("waiting").set({
-                      players: tempList
-                    })
-                    .then(function() {
-                      console.log("db setting waiting queue after pause success");
-                    })
-                    .catch(function(error) {
-                      console.error("db setting waiting queue after pause failed", error);
-                    });
+              case GAME_STATUS_PAUSED:
 
-                  renderGame(PLAYER_STATUS_WAITING);
+                  postMessage(MESSAGE_TEXT_PAUSED_GAME);
+                  console.log("Game status changed to paused. Subscriber called. Status is " + decodeGameStatus(gameStatus));
 
-              } // end if player is active
+                  // move myself to queue if I'm active, otherwise ignore, could be on break
+                  if (status == PLAYER_STATUS_ACTIVE)
+                  {
+                      console.log("Paused player status is " + status);
+                      // move to waiting
+                      status = PLAYER_STATUS_WAITING;
 
-              break;
+                      // set my player status to waiting
+                      db.collection("players").doc(id).update({
+                        status: PLAYER_STATUS_WAITING
+                      })
+                      .then(function() {
+                        console.log("Player status set to waiting after game pause.");
+                      })
+                      .catch(function(error) {
+                        console.error("Error Player status set to waiting after game pause.", error);
+                      });
 
-          case GAME_STATUS_NOT_STARTED:
-              // logoffUser();
-              break;
+                      // set waiting queue to just me
+                      var tempList = new Array;
+                      tempList.push(id);
 
-          default:
+                      db.collection("queues").doc("waiting").set({
+                          players: tempList
+                        })
+                        .then(function() {
+                          console.log("db setting waiting queue after pause success");
+                        })
+                        .catch(function(error) {
+                          console.error("db setting waiting queue after pause failed", error);
+                        });
 
+                      renderGame(PLAYER_STATUS_WAITING);
+
+                  } // end if player is active
+
+                  break;
+
+              case GAME_STATUS_NOT_STARTED:
+                  // logoffUser();
+                  break;
+
+              default:
+
+            }
         }
 
     } // end if doc exists
     else
     {
-      message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+      postMessage(MESSAGE_TEXT_FATAL_ERROR);
+      postError(SYSTEM_ID,ERROR_GAME_DATA_REF_DOESNT_EXIST);
       console.log("Game data doc was deleted in subscribe.");
-      // error handling
     }
 });
 
@@ -330,8 +378,22 @@ gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
 
 function getScreenData()
 {
-  // Grab data from input boxes and store in global vars
-  id = document.getElementById("idInputBox").value;
+
+  var tempId = document.getElementById("idInputBox").value;
+
+  // strip off extra space if necessary
+  if (String(tempId)[PLAYER_ID_LENGTH] == " ")
+  {
+    // splice off starting at the 8th position
+    console.log("8th space found, slice off extra characters, use first 8 only.");
+    id = String(tempId).slice(0,PLAYER_ID_LENGTH);
+  }
+  else
+  {
+    console.log("Setting id = " + tempId);
+    id = tempId;
+  }
+
   nameOfTargetsTarget = document.getElementById("targetsTargetNameInputBox").value;
   name = document.getElementById("nameInputBox").value;
 }
@@ -352,95 +414,112 @@ registerButton.addEventListener('click', function (e)
               {
                 // Can't register, game already over
                 console.log("Can't register, game already over.");
-                message.innerHTML = MESSAGE_TEXT_CANT_REGISTER_GAME_OVER;
+                postMessage(MESSAGE_TEXT_CANT_REGISTER_GAME_OVER);
               }
               else  // move forward with registration
               {
-                  getScreenData();
-
-                  if (name == "")
+                  // Check if phase 1 or 2 - First click hides login controls and shows name field only
+                  if (registrationInProgress == false) // first click
                   {
-                    console.log("Blank name entered in name input box.");
-                    message.innerHTML = MESSAGE_TEXT_INVALID_SCREEN_DATA + "  Name is invalid.";
+                    registrationInProgress = true;
+                    status = PLAYER_STATUS_REGISTER_IN_PROGRESS;
+                    renderGame(status);
                     return;
                   }
-
-                  // continue if name entered
-                  var tempId = "";
-                  var i;
-
-                  // loop through, creating 1 random digit at a time
-                  for (i=0; i<ID_LENGTH; i++)
+                  else // phase 2, complete registration
                   {
-                    tempId += String(Math.floor(Math.random() * 10));
-                  }
+                      getScreenData();
 
-                  tempId = String(tempId);
-                  console.log("Temp id created is " + tempId + " length is " + tempId.length);
-
-                  // check if this id is already in use - if yes, reject registration request
-                  var playerRef = db.collection("players").doc(tempId);
-
-                  playerRef.get().then(function(doc)
-                  {
-                      console.log("Player ref on temp id executed");
-
-                      if (doc.exists)
+                      if (name == "")
                       {
-                          // player already exists, don't allow
-                          console.log("Error - Player already exists.");
-                          message.innerHTML = MESSAGE_TEXT_PLAYER_ALREADY_EXISTS;
-                          return;
+                        console.log("Blank name entered in name input box.");
+                        postMessage(MESSAGE_TEXT_INVALID_SCREEN_DATA + "  Name is invalid.");
+                        return;
                       }
 
-                      console.log("Player doesn't exist.  About to add player to db.  Name is " + name);
+                      // continue if name entered
+                      registrationInProgress = false;
+                      var tempId = "";
+                      var i;
 
-                      // Check if game is not started, if yes, then put in Register ASAP, else read choice from radio button
-                      if (gameStatus == GAME_STATUS_NOT_STARTED)
+                      // loop through, creating 1 random digit at a time
+                      for (i=0; i<PLAYER_ID_LENGTH; i++)
                       {
-                          console.log("Game status is 'not started'");
-                          myRegistrationType = REGISTERED_ASAP;
+                        tempId += String(Math.floor(Math.random() * 10));
                       }
-                      else
-                      {
-                          console.log("Game status is not - 'not started'");
-                          // get the choice from the screen
-                          var myForm = document.getElementById("registrationTypes");
 
-                          if (myForm.registration[0].checked == true)
+                      tempId = String(tempId);
+                      console.log("Temp id created is " + tempId + " length is " + tempId.length);
+
+                      // check if this id is already in use - if yes, reject registration request
+                      var playerRef = db.collection("players").doc(tempId);
+
+                      playerRef.get().then(function(doc)
+                      {
+                          console.log("Player ref on temp id executed");
+
+                          if (doc.exists)
                           {
+                              // player already exists, don't allow
+                              console.log("Error - Player already exists.");
+                              postMessage(MESSAGE_TEXT_PLAYER_ALREADY_EXISTS);
+                              postError(tempId, MESSAGE_TEXT_PLAYER_ALREADY_EXISTS);
+                              return;
+                          }
+
+                          console.log("Player doesn't exist.  About to add player to db.  Name is " + name);
+
+                          // Check if game is not started, if yes, then put in Register ASAP, else read choice from radio button
+                          if (gameStatus == GAME_STATUS_NOT_STARTED)
+                          {
+                              console.log("Game status is 'not started'");
                               myRegistrationType = REGISTERED_ASAP;
                           }
                           else
                           {
-                              myRegistrationType = REGISTERED_SCHEDULED;
-                          }
+                              console.log("Game status is not - 'not started'");
+                              // get the choice from the screen
+                              var myForm = document.getElementById("registrationTypes");
 
-                      } // end else
+                              if (myForm.registration[0].checked == true)
+                              {
+                                  myRegistrationType = REGISTERED_ASAP;
+                              }
+                              else
+                              {
+                                  myRegistrationType = REGISTERED_SCHEDULED;
+                              }
 
-                      // add player to the players db --------------------
-                      db.collection("players").doc(tempId).set({
-                        status: PLAYER_STATUS_REGISTERED,
-                        owed: OWED_STARTER,
-                        total: 0,
-                        registrationType: myRegistrationType,
-                        scheduledTime: nextScheduledStart,  // this will be ignored if registered ASAP
-                        name: name
-                      })
-                      .then(function() {
-                        console.log("Register player success. ID = " + tempId + " Name is " + name);
-                        id = tempId;
-                        status = PLAYER_STATUS_REGISTERED;
-                        renderGame(PLAYER_STATUS_REGISTERED);
-                      })
-                      .catch(function(error) {
-                        console.error("Register player failed.", error);
-                      });
+                          } // end else
 
-                          // reset input boxes
-                      resetInputBoxes();
+                          // add player to the players db --------------------
+                          db.collection("players").doc(tempId).set({
+                            status: PLAYER_STATUS_REGISTERED,
+                            owed: OWED_STARTER,
+                            total: 0,
+                            registrationType: myRegistrationType,
+                            scheduledTime: nextScheduledStart,  // this will be ignored if registered ASAP
+                            name: name
+                          })
+                          .then(function() {
+                            console.log("Register player success. ID = " + tempId + " Name is " + name);
+                            id = tempId;
+                            status = PLAYER_STATUS_REGISTERED;
+                            renderGame(PLAYER_STATUS_REGISTERED);
+                          })
+                          .catch(function(error) {
+                            console.error("Register player failed.", error);
+                          });
 
-                  }); // player ref get, check if player exists
+                              // reset input boxes
+                          resetInputBoxes();
+
+                      }); // player ref get, check if player exists
+
+
+
+
+                  }
 
               }   // end else - continue with registration
 
@@ -460,21 +539,164 @@ logInButton.addEventListener('click', function (e)
 {
     getScreenData();
 
+    // clear out old messages
+    messages = new Array;
+
     // get game status here and display on screen
     var gameDataRef = db.collection("gameData").doc("gameData");
+
     gameDataRef.get().then(function(doc)
     {
       if (doc.exists)
       {
           gameStatus = doc.data().status;
+          volunteerNeeded = doc.data().volunteerNeeded;
 
           // update needed here or nearby - need to create a listener on game status
           document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
           console.log("Game status is " + decodeGameStatus(gameStatus));
+
+          // check if volunteer volunteer
+          if (doc.data().volunteerNeeded == true)
+          {
+            document.getElementById("volunteerButton").style.visibility = "visible";
+            postMessage(MESSAGE_TEXT_VOLUNTEER_NEEDED);
+          }
+          else
+          {
+            document.getElementById("volunteerButton").style.visibility = "hidden";
+          }
+
       }
     });
 
-    // create a reference to the document
+    // --------------------------------------------------------------------------
+    // subscribe to change in game status **************  Subscribe *************
+    //
+    // gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
+    // {
+    //     console.log("Within Login - Subscriber on game status change called. Current status is " + decodeGameStatus(gameStatus) + " New status is " + decodeGameStatus(doc.data().status));
+    //
+    //     if (doc.exists)
+    //     {
+    //         // turn on or off volunteer button - Player needs to be logged in.
+    //         if ((doc.data().volunteerNeeded == true) && (loggedIn == true))
+    //         {
+    //           document.getElementById("volunteerButton").style.visibility = "visible";
+    //           postMessage(MESSAGE_TEXT_VOLUNTEER_NEEDED);
+    //           volunteerNeeded = true;
+    //         }
+    //         else
+    //         {
+    //           if (volunteerNeeded == true)
+    //           {
+    //               postMessage(MESSAGE_TEXT_VOLUNTEER_FILLED);
+    //               volunteerNeeded = false;
+    //           }
+    //
+    //           document.getElementById("volunteerButton").style.visibility = "hidden";
+    //         }
+    //
+    //         // update global vars
+    //         nextScheduledStart = doc.data().nextScheduledStart;
+    //
+    //         // only process change if status changes, check for other data changes above
+    //         if (gameStatus != doc.data().status)
+    //         {
+    //             gameStatus = doc.data().status;
+    //
+    //             // update game status on screen
+    //             document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
+    //
+    //             switch (gameStatus)
+    //             {
+    //               case GAME_STATUS_COMPLETED:
+    //
+    //                   console.log("Game status changed to completed. Subscriber called. Status is " + decodeGameStatus(gameStatus));
+    //                   status = PLAYER_STATUS_GAME_OVER;  // player status
+    //
+    //                   // change player status on the db only if logged in.
+    //
+    //                   if (loggedIn == true)
+    //                   {
+    //                       console.log("Player is logged in.  Updating status on db to player status game over. id is " + id);
+    //                       // set my player status to waiting
+    //                       db.collection("players").doc(id).update({
+    //                         status: PLAYER_STATUS_GAME_OVER
+    //                       })
+    //                       .then(function() {
+    //                         console.log("Player status set to Game Over.");
+    //                       })
+    //                       .catch(function(error) {
+    //                         console.error("Error Player status set to Game Over.", error);
+    //                       });
+    //                   }
+    //
+    //                   renderGame(PLAYER_STATUS_GAME_OVER);
+    //                   break;
+    //
+    //               case GAME_STATUS_PAUSED:
+    //
+    //                   postMessage(MESSAGE_TEXT_PAUSED_GAME);
+    //                   console.log("Game status changed to paused. Subscriber called. Status is " + decodeGameStatus(gameStatus));
+    //
+    //                   // move myself to queue if I'm active, otherwise ignore, could be on break
+    //                   if (status == PLAYER_STATUS_ACTIVE)
+    //                   {
+    //                       console.log("Paused player status is " + status);
+    //                       // move to waiting
+    //                       status = PLAYER_STATUS_WAITING;
+    //
+    //                       // set my player status to waiting
+    //                       db.collection("players").doc(id).update({
+    //                         status: PLAYER_STATUS_WAITING
+    //                       })
+    //                       .then(function() {
+    //                         console.log("Player status set to waiting after game pause.");
+    //                       })
+    //                       .catch(function(error) {
+    //                         console.error("Error Player status set to waiting after game pause.", error);
+    //                       });
+    //
+    //                       // set waiting queue to just me
+    //                       var tempList = new Array;
+    //                       tempList.push(id);
+    //
+    //                       db.collection("queues").doc("waiting").set({
+    //                           players: tempList
+    //                         })
+    //                         .then(function() {
+    //                           console.log("db setting waiting queue after pause success");
+    //                         })
+    //                         .catch(function(error) {
+    //                           console.error("db setting waiting queue after pause failed", error);
+    //                         });
+    //
+    //                       renderGame(PLAYER_STATUS_WAITING);
+    //
+    //                   } // end if player is active
+    //
+    //                   break;
+    //
+    //               case GAME_STATUS_NOT_STARTED:
+    //                   // logoffUser();
+    //                   break;
+    //
+    //               default:
+    //
+    //             }
+    //         }
+    //
+    //     } // end if doc exists
+    //     else
+    //     {
+    //       postMessage(MESSAGE_TEXT_FATAL_ERROR);
+    //       postError(SYSTEM_ID,ERROR_GAME_DATA_REF_DOESNT_EXIST);
+    //       console.log("Game data doc was deleted in subscribe.");
+    //     }
+    // });
+    //
+    // // create a reference to the document
     var playerRef = db.collection("players").doc(id);
 
     playerRef.get().then(function(doc)
@@ -506,11 +728,18 @@ logInButton.addEventListener('click', function (e)
                 //if ((doc.exists) && (doc.data().name == name))
                 if (doc.exists)
                 {
-                    console.log("Listener snapshot called player doc exists name is: " + doc.data().name + " - My name is " + name + "- current status is " + decodePlayerStatus(status) + " - incoming status is " + decodePlayerStatus(doc.data().status) + " - last event was " + lastEvent );
+                    console.log("Listener snapshot called player doc exists name is: " + doc.data().name + " - My name is " + name + "- current status is " + decodePlayerStatus(status) + " - incoming status is " + decodePlayerStatus(doc.data().status));
 
                     // update screen
                     document.getElementById("myOwed").innerHTML = doc.data().owed;
                     document.getElementById("myTotal").innerHTML = doc.data().total;
+
+                    // update global var in case admin uploaded pic
+                    if (myPicFileName != doc.data().pictureName)
+                    {
+                      console.log("My picture file name changed.");
+                      myPicFileName = doc.data().pictureName;
+                    }
 
                     if (status == PLAYER_STATUS_GAME_OVER)
                     {
@@ -525,7 +754,7 @@ logInButton.addEventListener('click', function (e)
                     // update owed if nec
                     if (owed != doc.data().owed)
                     {
-                      message.innerHTML = MESSAGE_TEXT_BOUNTY_OWED_CHANGE;
+                      postMessage(MESSAGE_TEXT_BOUNTY_OWED_CHANGE);
                       owed = doc.data().owed;
                     }
 
@@ -536,14 +765,14 @@ logInButton.addEventListener('click', function (e)
                         if (iVolunteered == false)
                         {
                           console.log(MESSAGE_TEXT_ASSASSINATED);
-                          message.innerHTML = MESSAGE_TEXT_ASSASSINATED;
-                          lastEvent = EVENT_TYPE_ASSASSINATED;
+                          postMessage(MESSAGE_TEXT_ASSASSINATED);
+                          //lastEvent = EVENT_TYPE_ASSASSINATED;
                         }
                         else  // I did volunteer
                         {
                           console.log(MESSAGE_TEXT_VOLUNTEERED);
-                          message.innerHTML = MESSAGE_TEXT_VOLUNTEERED;
-                          lastEvent = EVENT_TYPE_VOLUNTEERED;
+                          postMessage(MESSAGE_TEXT_VOLUNTEERED);
+                          //lastEvent = EVENT_TYPE_VOLUNTEERED;
                           iVolunteered = false;   // flip back to false
                         }
 
@@ -558,8 +787,8 @@ logInButton.addEventListener('click', function (e)
                     {
                         console.log("Player change subscribe called - going from waiting or registered to active. global id is " + id);
 
-                        message.innerHTML = MESSAGE_TEXT_ACTIVATED;
-                        lastEvent = EVENT_TYPE_ACTIVATED;
+                        postMessage(MESSAGE_TEXT_ACTIVATED);
+                        //lastEvent = EVENT_TYPE_ACTIVATED;
                         status = PLAYER_STATUS_ACTIVE;
 
                         // get and update my target data
@@ -586,7 +815,6 @@ logInButton.addEventListener('click', function (e)
                                     {
                                         console.log("My link listener called - Doc exists - within waiting to queue change");
 
-                                        // message.innerHTML = MESSAGE_TEXT_NEW_TARGET;
                                         var myTargetsID = doc.data().target;
 
                                         // get my target's name and update screen
@@ -675,7 +903,7 @@ logInButton.addEventListener('click', function (e)
 
                                 } // end if doc exists
                                 else {
-                                  message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+                                  postMessage(MESSAGE_TEXT_FATAL_ERROR);
                                   console.log("Error getting my targets player document within player subscribe data change:", error);
                                   // my target's player record doesn't exist
                                 }
@@ -685,7 +913,7 @@ logInButton.addEventListener('click', function (e)
                           } // end if doc exists on search for my link record
                           else
                           {
-                              message.innerHTML = MESSAGE_TEXT_FATAL_ERROR;
+                              postMessage(MESSAGE_TEXT_FATAL_ERROR);
                               console.log("My link doc doesn't exist within player data subscribe:", error);
                               // my link record doesn't exist
                           } // end else my link doc doesn't exist
@@ -702,7 +930,7 @@ logInButton.addEventListener('click', function (e)
                     if ((doc.data().status == PLAYER_STATUS_REGISTERED) && (status != PLAYER_STATUS_REGISTERED))
                     {
                         console.log("Player is registered - Subscriber called.");
-                        message.innerHTML = MESSAGE_TEXT_REGISTERED;
+                        //postMessage(MESSAGE_TEXT_REGISTERED);
                         // lastEvent = EVENT_TYPE_WAITING;
                         status = PLAYER_STATUS_REGISTERED;
                         renderGame(PLAYER_STATUS_REGISTERED);
@@ -721,10 +949,18 @@ logInButton.addEventListener('click', function (e)
                     if (doc.data().status == PLAYER_STATUS_WAITING)
                     {
                         console.log(MESSAGE_TEXT_WAITING);
-                        message.innerHTML = MESSAGE_TEXT_WAITING;
-                        lastEvent = EVENT_TYPE_WAITING;
+                        //lastEvent = EVENT_TYPE_WAITING;
                         status = PLAYER_STATUS_WAITING
                         renderGame(PLAYER_STATUS_WAITING);
+                        return;
+                    }
+
+                    // Only show scheduled message if changed
+                    if ((doc.data().status == PLAYER_STATUS_SCHEDULED) && (status != PLAYER_STATUS_SCHEDULED))
+                    {
+                        // lastEvent = EVENT_TYPE_SCHEDULED;
+                        status = PLAYER_STATUS_SCHEDULED;
+                        renderGame(PLAYER_STATUS_SCHEDULED);
                         return;
                     }
 
@@ -736,13 +972,12 @@ logInButton.addEventListener('click', function (e)
                   if (!doc.exists)
                     logoffUser();
 
-                  message.innerHTML = "";
                 }
 
           });  // ******** end subscribe on my player record  *********************************************************
 
           // Display success in message area
-          message.innerHTML = MESSAGE_TEXT_LOGIN;
+          postMessage(MESSAGE_TEXT_LOGIN);
 
           // check my status, retrieve my target's name and pic if I am Active
           if (status == PLAYER_STATUS_ACTIVE)
@@ -815,7 +1050,7 @@ logInButton.addEventListener('click', function (e)
                             {
                                 // go into paused mode
                                 console.log("Game Paused - Only 1 player active. My Link Subscriber called and my target is me.");
-                                message.innerHTML = GAME_STATUS_PAUSED_TEXT;
+                                postMessage(GAME_STATUS_PAUSED_TEXT);
 
                                 // Set game status to "Paused"  ---------------------------------
                                 db.collection("gameData").doc("gameData").update({
@@ -892,16 +1127,16 @@ logInButton.addEventListener('click', function (e)
 
           }   // end if my status was active
           else {
-            console.log("Status is not active.");
+            console.log("Status is not active. It is " + decodePlayerStatus(doc.data().status));
           }
 
-          renderGame(status);   // user status
+          renderGame(status);
 
       }   // end if doc exists
       else
       {
-        message.innerHTML = MESSAGE_TEXT_LOGIN_FAILED + id;
-        console.log("Login failed.  Doc doesn't exist.");
+        postMessage(MESSAGE_TEXT_LOGIN_FAILED + id);
+        postError(id, MESSAGE_TEXT_LOGIN_FAILED + id);
       }
 
     }).catch(function(error) {
@@ -925,18 +1160,25 @@ function logoffUser()
     document.getElementById("myName").innerHTML = "";
     document.getElementById("myStatus").innerHTML = "";
     document.getElementById("gameStatus").innerHTML = "";
+    document.getElementById("myTargetsName").innerHTML = "";
 
     document.getElementById("myOwed").innerHTML = "";
     document.getElementById("myTotal").innerHTML = "";
     document.getElementById("playerPictureInput").value = "";
+
+    document.getElementById("nameInputBox").value = "";
 
     document.getElementById("myTargetsPictureLabel").innerHTML = MY_TARGETS_PICTURE_LABEL;
     document.getElementById("myPictureLabel").innerHTML = MY_PICTURE_LABEL;
 
     console.log("Logoff called, my id is " + id);
 
+    postMessage(MESSAGE_TEXT_LOGOFF);
+
     //  detach from listeners
     playerUnsubscribe();
+
+    console.log("Game Data Unsubscribe called.");
     gameDataUnsubscribe();
 
     if (status == PLAYER_STATUS_ACTIVE)
@@ -955,6 +1197,7 @@ function logoffUser()
     myPicFileName = "";
     loggedIn = false;
     iVolunteered = false;
+    registrationInProgress = false;
 
     renderGame(PLAYER_STATUS_LOGGED_OFF);
 
@@ -990,7 +1233,7 @@ function confirmAssassination()
     if (nameOfTargetsTarget == "")
     {
       console.log("Blank name entered in target's target box.");
-      message.innerHTML = MESSAGE_TEXT_INVALID_SCREEN_DATA + "  Target's target name invalid.";
+      postMessage(MESSAGE_TEXT_INVALID_SCREEN_DATA + "  Target's target name invalid.");
       return;
     }
 
@@ -1026,7 +1269,7 @@ function confirmAssassination()
                       if (nameOfTargetsTarget.toLowerCase() == (doc.data().name).toLowerCase())
                       {
                         console.log("Names match - good assassination  --------------------------");
-                        message.innerHTML = MESSAGE_TEXT_CONFIRM_BOUNTY;
+                        postMessage(MESSAGE_TEXT_CONFIRM_BOUNTY);
 
                         // create a reference to the player document to increment owed
                         var playerRef = db.collection("players").doc(id);
@@ -1149,8 +1392,6 @@ function confirmAssassination()
                                   if (id == myTargetsTargetID)
                                   {
                                     console.log("Game Paused - Only 1 player active.");
-                                    //message.innerHTML = GAME_STATUS_PAUSED_TEXT;
-                                    // status = GAME_STATUS_PAUSED;
 
                                     // clean up my targets data before handling pause scenario
                                     // delete old target's link
@@ -1234,12 +1475,13 @@ function confirmAssassination()
                       else
                       {
                           console.log("Attempted assassination names don't match.");
-                          message.innerHTML = MESSAGE_TEXT_BOUNTY_FAILED;
+                          postMessage(MESSAGE_TEXT_BOUNTY_FAILED + nameOfTargetsTarget.toLowerCase());
+                          postError(id,MESSAGE_TEXT_BOUNTY_FAILED + nameOfTargetsTarget.toLowerCase());
                       }
 
                   }   // end if doc exists - my targets player ref
                   else {
-                    console.log("My targets player ref doc doesnt exist")
+                    console.log("My targets player ref doc doesnt exist");
                   }
 
                 }).catch(function(error) {
@@ -1331,12 +1573,12 @@ buyBackInButton.addEventListener('click', function(e)
                 console.log("Error getting queue document:", error);
                 });
 
-            lastEvent = EVENT_TYPE_BUY_BACK_IN;
-            message.innerHTML = MESSAGE_TEXT_BUY_BACK_IN;
+            //lastEvent = EVENT_TYPE_BUY_BACK_IN;
+            postMessage(MESSAGE_TEXT_BUY_BACK_IN);
             status = PLAYER_STATUS_WAITING;
             renderGame(PLAYER_STATUS_WAITING);
 
-            // lastMessage = "Reactivate successful.  Awaiting assignment."
+            // lastMessage = "Reactivate successful.  Waiting assignment."
             // events.push([EVENT_TYPE_BUY_BACK_IN, players[currentPlayerIndex][IND_ID], new Date()]);
             // players[currentPlayerIndex][IND_OWED] = players[currentPlayerIndex][IND_OWED] - 1;
             // players[currentPlayerIndex][IND_STATUS] = PLAYER_STATUS_WAITING;
@@ -1366,8 +1608,8 @@ takeABreakButton.addEventListener('click', function(e)
   {
     if (doc.exists)
     {
-        // only take a break if active or waiting
-        if ((doc.data().status == PLAYER_STATUS_ACTIVE) || (doc.data().status == PLAYER_STATUS_WAITING) || (doc.data().status == PLAYER_STATUS_SCHEDULED) )
+        // only take a break if active
+        if (doc.data().status == PLAYER_STATUS_ACTIVE)
         {
           status = PLAYER_STATUS_BREAK;
 
@@ -1375,7 +1617,6 @@ takeABreakButton.addEventListener('click', function(e)
           var newTimeStamp = new firebase.firestore.Timestamp.fromDate(now);
 
           console.log("Take a break - firestore now date is " + newTimeStamp);
-          console.log("Take a break button pressed while I am or waiting active - Continue processing.")
 
           // proceed with taking a break
           // update player status to on break
@@ -1391,69 +1632,16 @@ takeABreakButton.addEventListener('click', function(e)
             console.error("Error player status update to db - break", error);
           });
 
-          // check if player is in scheduled queue or waiting queue
-          if (doc.data().status == PLAYER_STATUS_ACTIVE)
-          {
-            updateChainToSkipMe();
-          }
-          else
-          {
-              // remove me from appropriate queue
-              var whichQueue;   // zzzz
-              if (doc.data().status == PLAYER_STATUS_WAITING)   // add to waiting queue
-              {
-                  whichQueue = "waiting";
-                  console.log("Which queue set to waiting");
-              }
-              else // scheduled
-              {
-                whichQueue = "scheduled";
-                console.log("Which queue set to scheduled");
-              }
-
-              var tempQueue = new Array;
-
-              // get the right queue and remove this player
-              var queueRef = db.collection("queues").doc(whichQueue);
-              queueRef.get().then(function(doc)
-              {
-                if (doc.exists)
-                {
-                    var i;
-                    for (i=0;i<doc.data().players.length;i++)
-                    {
-                        if (doc.data().players[i] != id)
-                          tempQueue.push(id);
-                    }
-
-                    // update db queue with local queue
-                    db.collection("queues").doc(whichQueue).set({
-                        players: tempQueue
-                    })
-                    .then(function() {
-                      console.log("db setting waiting or sched queue players array success");
-                    })
-                    .catch(function(error) {
-                      console.error("db setting waiting or sched queue players array failed", error);
-                    });
-
-                }  // end if doc.exists
-                else
-                {
-                  console.log("Error Queue Doc doesn't exist - Take a break");
-                }
-              }).catch(function(error) {
-                  console.log("Error getting queue document - Take a brea:", error);
-              });
-
-          }  // end else - player is not active
+          updateChainToSkipMe();
 
           renderGame(PLAYER_STATUS_BREAK);
 
         } // end if active
         else {
-          // can't buy back in
-          console.log("Can't buy back in.");
+          // Button should only be visible if active status
+          console.log("Incorrect Status to Take Break.  Don't believe this is even reachable.");
+          postMessage(MESSAGE_TEXT_CANT_TAKE_BREAK);
+          postError(id,MESSAGE_TEXT_CANT_TAKE_BREAK);
         }
     } // end if player doc exists
 
@@ -1488,7 +1676,7 @@ returnFromBreakButton.addEventListener('click', function(e)
             if (minsDiff < minBreakLength)
             {
               console.log("Too early to return");
-              message.innerHTML = "Too early to return";
+              postMessage(MESSAGE_TEXT_TOO_EARLY_TO_RETURN_FROM_BREAK);
               return;
             }
 
@@ -1542,7 +1730,9 @@ returnFromBreakButton.addEventListener('click', function(e)
 
         }  // end if status is break
         else {
-          console.log("Not on break, can't come back from break.")
+          console.log("Not on break, can't come back from break.");
+          postMessage(MESSAGE_TEXT_LOGIN_CANT_RETURN_FROM_BREAK);
+          postError(id,MESSAGE_TEXT_LOGIN_CANT_RETURN_FROM_BREAK);
         }
     }  // end if player ref doc exists
 
@@ -1572,10 +1762,14 @@ uploadPictureButton.addEventListener('click', function (e)
                   pictureName: myPicFileName
                 })
                 .then(function() {
-                  console.log("Players pic name update success");
+                  console.log("Updated pic name in player db document.");
+                  // postMessage(MESSAGE_TEXT_UPLOAD_PIC_SUCCESS);
                 })
                 .catch(function(error) {
                   console.error("Error player pic name update", error);
+                  postMessage(MESSAGE_TEXT_UPLOAD_PIC_FAILED);
+                  postError(id,MESSAGE_TEXT_UPLOAD_PIC_FAILED);
+                  resetInputBoxes();
                 });
           } // end if player doc exists - need error checking
 
@@ -1617,16 +1811,19 @@ uploadPictureButton.addEventListener('click', function (e)
           {
               // Handle unsuccessful uploads
               console.log("Unsuccessful file upload");
-              message.innerHTML = MESSAGE_TEXT_UPLOAD_PIC_FAILED;
-
+              postMessage(MESSAGE_TEXT_UPLOAD_PIC_FAILED);
+              postError(MESSAGE_TEXT_UPLOAD_PIC_FAILED);
+              resetInputBoxes();
           },
           function()
           {
                 // Handle successful uploads on complete
                 // For instance, get the download URL: https://firebasestorage.googleapis.com/...
-                uploadTask.snapshot.ref.getDownloadURL().then(function(downloadURL) {
+                uploadTask.snapshot.ref.getDownloadURL().then(function(downloadURL)
+                {
                   console.log('Success - File available at', downloadURL);
-                  message.innerHTML = MESSAGE_TEXT_UPLOAD_PIC_SUCCESS;
+                  postMessage(MESSAGE_TEXT_UPLOAD_PIC_SUCCESS);
+                  resetInputBoxes();
                 });
           });
 
@@ -1634,6 +1831,9 @@ uploadPictureButton.addEventListener('click', function (e)
     else
     {
       console.log("You must choose 1 file");
+      postMessage(MESSAGE_TEXT_MUST_CHOOSE_ONE_FILE);
+      postError(id,MESSAGE_TEXT_MUST_CHOOSE_ONE_FILE);
+      resetInputBoxes();
     }
 
 });
@@ -1658,6 +1858,7 @@ viewMyPictureButton.addEventListener('click', function (e)
         {
           decodeFileErrorCode(error,PIC_MISSING_MINE);
           document.getElementById("myPicture").src = "";
+          postError(id, PIC_MISSING_MINE);
         });  // end catch
 
 }); // end view my pic button
@@ -1668,6 +1869,7 @@ viewMyPictureButton.addEventListener('click', function (e)
 
 quitGameButton.addEventListener('click', function (e)
 {
+    console.log("Quit game called");
     var myTargetsID;  // save this for later use if nec
 
     var playerRef = db.collection("players").doc(id);
@@ -1677,11 +1879,21 @@ quitGameButton.addEventListener('click', function (e)
         {
             switch (doc.data().status)
             {
+              case PLAYER_STATUS_GAME_OVER:
+
+                postMessage(MESSAGE_TEXT_CANT_QUIT_GAME_OVER);
+                return;
+                break;
+
               case PLAYER_STATUS_ACTIVE:  // delete chain link, empty queue
 
                   console.log("In quit game, my status is " + doc.data().status);
-
                   updateChainToSkipMe();
+
+                  deletePlayer();
+
+                  // logoffUser();
+                  renderGame(PLAYER_STATUS_LOGGED_OFF);
 
                 break;
 
@@ -1699,22 +1911,51 @@ quitGameButton.addEventListener('click', function (e)
                     {
                         var i;
 
+                        console.log("Length of waiting queue going in is " + doc.data().players.length);
                         for (i=0;i<doc.data().players.length;i++)
                         {
+                            console.log("Waiting queue id is " + doc.data().players[i] + " My id is " + id);
                             if (doc.data().players[i] != id)
-                              tempQueue.push(id);
+                            {
+                              console.log("Pushing id " + doc.data().players[i] + " onto temp q");
+                              tempQueue.push(doc.data().players[i]);
+                            }
                         }
 
-                        // update db queue with local queue
-                        db.collection("queues").doc("waiting").set({
-                            players: tempQueue
-                        })
-                        .then(function() {
-                          console.log("db setting waiting queue players array success");
-                        })
-                        .catch(function(error) {
-                          console.error("db setting waiting queue players array failed", error);
-                        });
+                        if (doc.data().players.length == 1) // only me
+                        {
+                            console.log("Queue only me");
+                            // update db queue with local queue
+                            db.collection("queues").doc("waiting").update({
+                                players: []
+                            })
+                            .then(function() {
+                              console.log("db setting waiting queue players array success");
+                            })
+                            .catch(function(error) {
+                              console.error("db setting waiting queue players array failed", error);
+                            });
+
+                        }
+                        else
+                        {
+                            console.log("Queue not only me");
+                            // update db queue with local queue
+                            db.collection("queues").doc("waiting").set({
+                                players: tempQueue
+                            })
+                            .then(function() {
+                              console.log("db setting waiting queue players array success");
+                            })
+                            .catch(function(error) {
+                              console.error("db setting waiting queue players array failed", error);
+                            });
+
+                        }
+
+                        deletePlayer();
+
+                        renderGame(PLAYER_STATUS_LOGGED_OFF);
 
                     }  // end if doc.exists
                     else
@@ -1727,10 +1968,84 @@ quitGameButton.addEventListener('click', function (e)
 
                 break;
 
+              case PLAYER_STATUS_SCHEDULED:
+
+                    // delete from scheduled queue
+                    // First get queue, loop through, create new queue without player
+                    var tempQueue = new Array;
+
+                    // get the waiting queue and remove this player
+                    var queueRef = db.collection("queues").doc("scheduled");
+                    queueRef.get().then(function(doc)
+                    {
+                      if (doc.exists)
+                      {
+                          var i;
+
+                          console.log("Length of scheduled queue going in is " + doc.data().players.length);
+                          for (i=0;i<doc.data().players.length;i++)
+                          {
+                              console.log("Scheduled queue id is " + doc.data().players[i] + " My id is " + id);
+                              if (doc.data().players[i] != id)
+                              {
+                                console.log("Pushing id " + doc.data().players[i] + " onto temp q");
+                                tempQueue.push(doc.data().players[i]);
+                              }
+                          }
+
+                          if (doc.data().players.length == 1) // only me
+                          {
+                              console.log("Queue only me");
+                              // update db queue with local queue
+                              db.collection("queues").doc("scheduled").update({
+                                  players: []
+                              })
+                              .then(function() {
+                                console.log("db setting scheduled queue players array success");
+                              })
+                              .catch(function(error) {
+                                console.error("db setting scheduled queue players array failed", error);
+                              });
+
+                          }
+                          else
+                          {
+                              console.log("Queue not only me");
+                              // update db queue with local queue
+                              db.collection("queues").doc("scheduled").set({
+                                  players: tempQueue
+                              })
+                              .then(function() {
+                                console.log("db setting scheduled queue players array success");
+                              })
+                              .catch(function(error) {
+                                console.error("db setting scheduled queue players array failed", error);
+                              });
+
+                          }
+
+                          deletePlayer();
+
+                          renderGame(PLAYER_STATUS_LOGGED_OFF);
+
+                      }  // end if doc.exists
+                      else
+                      {
+                        console.log("Error Queue Doc doesn't exist - Remove Player");
+                      }
+                    }).catch(function(error) {
+                        console.log("Error getting queue document - Remove Player:", error);
+                    });
+
+                  break;
+
               case PLAYER_STATUS_INACTIVE:
               case PLAYER_STATUS_BREAK:
               case PLAYER_STATUS_LOGGED_OFF:
               case PLAYER_STATUS_REGISTERED:
+
+                  deletePlayer();
+                  renderGame(PLAYER_STATUS_LOGGED_OFF);
 
                 break;
 
@@ -1738,23 +2053,10 @@ quitGameButton.addEventListener('click', function (e)
 
             }
 
-            // delete player last ------------------------------------
-            db.collection("players").doc(id).delete().then(function()
-            {
-              console.log("Player " + id + " successfully deleted!");
-            }).catch(function(error)
-            {
-                  console.error("Error removing player " + id + " Error: ", error);
-            });
-
-            // logoffUser();
-
-            renderGame(PLAYER_STATUS_LOGGED_OFF);
-
         }  // end if doc exists, original player ref
         else {
           console.log("Player doesn't exist on Quit Game call");
-          message.innerHTML = MESSAGE_TEXT_PLAYER_NOT_FOUND;
+          postMessage(MESSAGE_TEXT_PLAYER_NOT_FOUND);
         }
 
     }); // end player ref.get
@@ -1769,43 +2071,62 @@ volunteerButton.addEventListener('click', function (e)
     iVolunteered = true;
 
     // error checking for near simultaneous volunteers - get var from db first and check?  Might help?
-
-    // flip db var to false
-    db.collection("gameData").doc("gameData").update({
-      volunteerNeeded: false
-    })
-    .then(function() {
-      console.log("Updated game data volunteer needed to false.");
-    })
-    .catch(function(error) {
-      console.error("Error - game data volunteer needed to false.", error);
-    });
-
-    // need new version of this to bring in scheduled queue too
-    processVolunteer();
-
-    // get player ref
-    var playerRef = db.collection("players").doc(id);
-
-    playerRef.get().then(function(doc)
+    var gameDataRef = db.collection("gameData").doc("gameData");
+    gameDataRef.get().then(function(doc)
     {
       if (doc.exists)
       {
-          // update player status to inactive
-          playerRef.update({
-            status: PLAYER_STATUS_INACTIVE,
-            owed: doc.data().owed + 1,
-            total: doc.data().total + 1
+        if (doc.data().volunteerNeeded == false)
+        {
+          document.getElementById("volunteerButton").style.visibility = "hidden";
+          return;
+        }
+        else
+        {
+
+          // flip db var to false
+          db.collection("gameData").doc("gameData").update({
+            volunteerNeeded: false
           })
           .then(function() {
-            console.log("Players status update success - volunteer inactive.");
+            console.log("Updated game data volunteer needed to false.");
           })
           .catch(function(error) {
-            console.error("Error player status update to db - volunteer inactive", error);
+            console.error("Error - game data volunteer needed to false.", error);
           });
 
-      }   // if doc exists
+          volunteerNeeded = false;
 
+          // need new version of this to bring in scheduled queue too
+          processVolunteer();
+
+          // get player ref
+          var playerRef = db.collection("players").doc(id);
+
+          playerRef.get().then(function(doc)
+          {
+            if (doc.exists)
+            {
+                // update player status to inactive
+                playerRef.update({
+                  status: PLAYER_STATUS_INACTIVE,
+                  owed: doc.data().owed + 1,
+                  total: doc.data().total + 1
+                })
+                .then(function() {
+                  console.log("Players status update success - volunteer inactive.");
+                })
+                .catch(function(error) {
+                  console.error("Error player status update to db - volunteer inactive", error);
+                });
+
+            }   // if doc exists
+
+          });
+
+        } // volunteer needed is still true, continue
+
+      } // end if doc.exists
     });
 
 });   // end volunteer button
@@ -1854,7 +2175,7 @@ function processVolunteer()
                 {
                   // go into paused mode
                   console.log("Game Paused - Only 1 player active. Found within processVolunteer function.");
-                  message.innerHTML = GAME_STATUS_PAUSED_TEXT;
+                  postMessage(GAME_STATUS_PAUSED_TEXT);
 
                   // Set game status to "Paused"  ---------------------------------
                   db.collection("gameData").doc("gameData").update({
@@ -2008,7 +2329,8 @@ function processVolunteer()
       }   // end if doc exists
       else {
         console.log("In processVolunteer - My link in chain doesn't exist - updateChainToSkipMe.");
-        message.innerHTML = MESSAGE_TEXT_CANT_VOLUNTEER;
+        postMessage(MESSAGE_TEXT_CANT_VOLUNTEER);
+
       }
     });   // link ref.get()
 
@@ -2144,7 +2466,7 @@ function updateChainToSkipMe()
                 {
                   // go into paused mode
                   console.log("Game Paused - Only 1 player active. Found within updateChainToSkipMe function.");
-                  message.innerHTML = GAME_STATUS_PAUSED_TEXT;
+                  postMessage(GAME_STATUS_PAUSED_TEXT);
 
                   // Set game status to "Paused"  ---------------------------------
                   db.collection("gameData").doc("gameData").update({
@@ -2304,9 +2626,95 @@ function updateChainToSkipMe()
 
 } // end function updateChainToSkipMe
 
+// ---------------------------------------
+
+function deletePlayer()
+{
+  // delete player last ------------------------------------
+  db.collection("players").doc(id).delete().then(function()
+  {
+    console.log("Player " + id + " successfully deleted!");
+  }).catch(function(error)
+  {
+        console.error("Error removing player " + id + " Error: ", error);
+  });
+
+}
 
 // ---------------------------------------
-// renderGame function
+
+function postError(inId, inMessage)
+{
+    console.log("Error - Id = " + inId + "  Message = " + inMessage);
+
+    // write error to db with meaningful text
+    errors.add({
+      id: inId,
+      messageText: inMessage,
+      timeStamp: new firebase.firestore.Timestamp.fromDate(new Date(Date.now()))
+    })
+    .then(function(docRef) {
+        console.log("Error Document written with player ID: ", inId);
+    })
+    .catch(function(error) {
+        console.error("Error adding Error document: ", error);
+    });
+
+}
+
+// ---------------------------------------
+
+function postMessage(inMessage)
+{
+    console.log("Post Message called, inMessage is " + inMessage + "  Total current messages is " + messages.length);
+
+    var i;
+    screenMessage.innerHTML = "";
+
+    if (messages.length == 0)
+    {
+        messages.push(inMessage);
+    }
+    else
+    {
+        // determine whether to push new message on or just shift
+        if (messages.length < SCROLLING_MESSAGE_LENGTH)
+        {
+            messages.push(messages[messages.length-1]);
+
+            for (i=0; i<messages.length-2; i++)
+            {
+                messages[messages.length-2-i] = messages[messages.length-3-i];
+            }
+        }
+        else
+        {
+            // shift all messages down 1, # of iterations is one less than the length
+            for (i=0; i<messages.length-1; i++)
+            {
+              messages[messages.length-1-i] = messages[messages.length-2-i];
+            }
+
+        }
+
+        messages[0] = inMessage;
+
+    }
+
+    var tempMessage = "";
+
+    for (i=0; i<messages.length; i++)
+    {
+        tempMessage += messages[i] + "<br>";
+    }
+
+    screenMessage.innerHTML = tempMessage;
+
+} // end function postMessage
+
+
+// ---------------------------------------
+// updateLogInControls function
 
 function updateLogInControls(direction)
 {
@@ -2314,16 +2722,16 @@ function updateLogInControls(direction)
   {
     document.getElementById("myIdInputLabel").style.visibility = "visible";
     document.getElementById("idInputBox").style.visibility = "visible";
-    document.getElementById("myRegisterNameLabel").style.visibility = "visible";
-    document.getElementById("nameInputBox").style.visibility = "visible";
     document.getElementById("registerButton").style.visibility = "visible";
     document.getElementById("logInButton").style.visibility = "visible";
 
-    document.getElementById("registerASAP").style.visibility = "visible";
-    document.getElementById("registerSchedule").style.visibility = "visible";
-    document.getElementById("registrationLabelASAP").style.visibility = "visible";
-    document.getElementById("registrationLabelScheduled").style.visibility = "visible";
+    document.getElementById("registerASAP").style.visibility = "hidden";
+    document.getElementById("registerSchedule").style.visibility = "hidden";
+    document.getElementById("registrationLabelASAP").style.visibility = "hidden";
+    document.getElementById("registrationLabelScheduled").style.visibility = "hidden";
 
+    document.getElementById("myRegisterNameLabel").style.visibility = "hidden";
+    document.getElementById("nameInputBox").style.visibility = "hidden";
     document.getElementById("returnFromBreakButton").style.visibility = "hidden";
     document.getElementById("buyBackInButton").style.visibility = "hidden";
 
@@ -2409,7 +2817,7 @@ function updateActiveControls(direction)
 
 function decodePlayerStatus(statusPassedIn)
 {
-  console.log("decode called - status passed in = " + statusPassedIn);
+  // console.log("decode called - status passed in = " + statusPassedIn);
 
   switch (Number(statusPassedIn)) {
 
@@ -2417,12 +2825,16 @@ function decodePlayerStatus(statusPassedIn)
       return PLAYER_STATUS_LOGGED_OFF_TEXT;
       break;
 
+    case PLAYER_STATUS_REGISTER_IN_PROGRESS:
+      return PLAYER_STATUS_REGISTER_IN_PROGRESS_TEXT;
+      break;
+
     case PLAYER_STATUS_WAITING:
       return PLAYER_STATUS_WAITING_TEXT;
       break;
 
     case PLAYER_STATUS_SCHEDULED:
-        return PLAYER_STATUS_SCHEDULED;
+        return PLAYER_STATUS_SCHEDULED_TEXT;
         break;
 
     case PLAYER_STATUS_ACTIVE:
@@ -2500,7 +2912,7 @@ function decodeFileErrorCode(error, picMissing)
     case 'storage/object-not-found':        // File doesn't exist
 
       console.log("File not found.");
-      message.innerHTML = MESSAGE_TEXT_FILE_NOT_FOUND;
+      postMessage(MESSAGE_TEXT_FILE_NOT_FOUND);
       if (picMissing == PIC_MISSING_TARGET)
         document.getElementById("myTargetsPictureLabel").innerHTML = MY_TARGETS_PICTURE_LABEL + " File Not Found.";
       else
@@ -2538,46 +2950,70 @@ function renderGame(myStatus)
     case PLAYER_STATUS_LOGGED_OFF:
 
         document.getElementById("volunteerButton").style.visibility = "hidden";
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-        message.innerHTML = "";
+        resetInputBoxes();
         updateLogInControls(ON);
         updateActiveControls(OFF);
+        postMessage(MESSAGE_TEXT_PLAYER_LOGGED_OFF);
+        //postMessage(MESSAGE_TEXT_WELCOME);
+        break;
+
+    case PLAYER_STATUS_REGISTER_IN_PROGRESS:
+
+        document.getElementById("volunteerButton").style.visibility = "hidden";
+        resetInputBoxes();
+        updateLogInControls(OFF);
+        updateActiveControls(OFF);
+        document.getElementById("myRegisterNameLabel").style.visibility = "visible";
+        document.getElementById("nameInputBox").style.visibility = "visible";
+        document.getElementById("registerButton").style.visibility = "visible";
+        document.getElementById("quitGameButton").style.visibility = "hidden";
+        document.getElementById("logOffButton").style.visibility = "hidden";
+        document.getElementById("registerASAP").style.visibility = "visible";
+        document.getElementById("registerSchedule").style.visibility = "visible";
+        document.getElementById("registrationLabelASAP").style.visibility = "visible";
+        document.getElementById("registrationLabelScheduled").style.visibility = "visible";
+
+        var nextStartDateFormat = new Date(nextScheduledStart.toDate());
+        postMessage(MESSAGE_TEXT_ENTER_YOUR_NAME_TO_REGISTER + nextStartDateFormat);
         break;
 
     case PLAYER_STATUS_WAITING:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-        message.innerHTML = MESSAGE_TEXT_WAITING;
-        document.getElementById("takeABreakButton").style.visibility = "visible";
-        document.getElementById("returnFromBreakButton").style.visibility = "hidden";
+        postMessage(MESSAGE_TEXT_WAITING);
+
+        // Changed code, can no longer take a break if waiting, doesn't make sense in real life
+        //document.getElementById("takeABreakButton").style.visibility = "visible";
+        //document.getElementById("returnFromBreakButton").style.visibility = "hidden";
+
         document.getElementById("buyBackInButton").style.visibility = "hidden";
         updateLogInControls(OFF);
         updateActiveControls(OFF);
+        enablePictures();
         break;
 
     case PLAYER_STATUS_SCHEDULED:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-        message.innerHTML = MESSAGE_TEXT_SCHEDULED;
-        document.getElementById("takeABreakButton").style.visibility = "visible";
-        document.getElementById("returnFromBreakButton").style.visibility = "hidden";
+        postMessage(MESSAGE_TEXT_SCHEDULED);
+        // document.getElementById("takeABreakButton").style.visibility = "visible";
+        // document.getElementById("returnFromBreakButton").style.visibility = "hidden";
         document.getElementById("buyBackInButton").style.visibility = "hidden";
         updateLogInControls(OFF);
         updateActiveControls(OFF);
+        enablePictures();
         break;
 
     case PLAYER_STATUS_ACTIVE:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateLogInControls(OFF);
         updateActiveControls(ON);
+        enablePictures();
         break;
 
     case PLAYER_STATUS_INACTIVE:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateLogInControls(OFF);
         updateActiveControls(OFF);
+        enablePictures();
 
         console.log("I am inactive, my owed is " + owed);
         // if I'm owed, show buy back in button
@@ -2593,16 +3029,15 @@ function renderGame(myStatus)
 
       case PLAYER_STATUS_BREAK:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
-        message.innerHTML = MESSAGE_TEXT_TAKE_BREAK;
-        document.getElementById("returnFromBreakButton").style.visibility = "visible";
+        postMessage(MESSAGE_TEXT_TAKE_BREAK);
         updateLogInControls(OFF);
         updateActiveControls(OFF);
+        enablePictures();
+        document.getElementById("returnFromBreakButton").style.visibility = "visible";
         break;
 
     case PLAYER_STATUS_REGISTERED:
 
-        console.log("Render game called, player status is " + decodePlayerStatus(myStatus));
         updateActiveControls(OFF);
 
         // if player has already logged in, turn off log in controls and enable pictures
@@ -2610,10 +3045,11 @@ function renderGame(myStatus)
         {
           updateLogInControls(OFF);
           enablePictures();
+          document.getElementById("quitGameButton").style.visibility = "visible";
         }
         else // Player is not logged in.  Turn on log in controls
         {
-            message.innerHTML = MESSAGE_TEXT_REGISTER_PLAYER + id + " Name is " + name + ". Log in to upload a picture.";
+            postMessage(MESSAGE_TEXT_REGISTER_PLAYER + id + ". Log in to upload a picture.");
             document.getElementById("idInputBox").value = id;
             updateLogInControls(ON);
         }
@@ -2622,8 +3058,9 @@ function renderGame(myStatus)
 
     case PLAYER_STATUS_GAME_OVER:
 
-        message.innerHTML = MESSAGE_TEXT_GAME_COMPLETED;
-        document.getElementById("myStatus").innerHTML = decodePlayerStatus(myStatus);
+        updateLogInControls(OFF);
+        postMessage(MESSAGE_TEXT_GAME_COMPLETED);
+        document.getElementById("myStatus").innerHTML = ""; // decodePlayerStatus(myStatus);
         document.getElementById("quitGameButton").style.visibility = "hidden";
         updateActiveControls(OFF);
         break;
