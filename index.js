@@ -570,6 +570,138 @@ logInButton.addEventListener('click', function (e)
       }
     });
 
+    // if (gameDataUnsubscribe == "")
+    // {
+    //   // zzzz
+    //   gameDataUnsubscribe = gameDataRef.onSnapshot(function(doc)
+    //   {
+    //       console.log("Within Outer Game - Subscriber on game status change called. Current status is " + decodeGameStatus(gameStatus) + " New status is " + decodeGameStatus(doc.data().status));
+    //
+    //       if (doc.exists)
+    //       {
+    //           // turn on or off volunteer button - Player needs to be active.
+    //           if ((doc.data().volunteerNeeded == true) && (status == PLAYER_STATUS_ACTIVE))
+    //           {
+    //             document.getElementById("volunteerButton").style.visibility = "visible";
+    //             postMessage(MESSAGE_TEXT_VOLUNTEER_NEEDED);
+    //             volunteerNeeded = true;
+    //           }
+    //           else
+    //           {
+    //             if ((doc.data().volunteerNeeded == false) && (volunteerNeeded == true))
+    //             {
+    //                 postMessage(MESSAGE_TEXT_VOLUNTEER_FILLED);
+    //                 volunteerNeeded = false;
+    //             }
+    //
+    //             document.getElementById("volunteerButton").style.visibility = "hidden";
+    //           }
+    //
+    //           // update global vars
+    //           nextScheduledStart = doc.data().nextScheduledStart;
+    //
+    //           // only process change if status changes, check for other data changes above
+    //           if (gameStatus != doc.data().status)
+    //           {
+    //               gameStatus = doc.data().status;
+    //
+    //               // update game status on screen
+    //               document.getElementById("gameStatus").innerHTML = decodeGameStatus(gameStatus);
+    //
+    //               switch (gameStatus)
+    //               {
+    //                 case GAME_STATUS_COMPLETED:
+    //
+    //                     console.log("Game status changed to completed. Subscriber called. Status is " + decodeGameStatus(gameStatus));
+    //                     status = PLAYER_STATUS_GAME_OVER;  // player status
+    //
+    //                     // change player status on the db only if logged in.
+    //
+    //                     if (loggedIn == true)
+    //                     {
+    //                         console.log("Player is logged in.  Updating status on db to player status game over. id is " + id);
+    //                         // set my player status to waiting
+    //                         db.collection("players").doc(id).update({
+    //                           status: PLAYER_STATUS_GAME_OVER
+    //                         })
+    //                         .then(function() {
+    //                           console.log("Player status set to Game Over.");
+    //                         })
+    //                         .catch(function(error) {
+    //                           console.error("Error Player status set to Game Over.", error);
+    //                         });
+    //                     }
+    //
+    //                     renderGame(PLAYER_STATUS_GAME_OVER);
+    //                     break;
+    //
+    //                 case GAME_STATUS_PAUSED:
+    //
+    //                     postMessage(MESSAGE_TEXT_PAUSED_GAME);
+    //                     console.log("Game status changed to paused. Subscriber called. Status is " + decodeGameStatus(gameStatus));
+    //
+    //                     // move myself to queue if I'm active, otherwise ignore, could be on break
+    //                     if (status == PLAYER_STATUS_ACTIVE)
+    //                     {
+    //                         console.log("Paused player status is " + status);
+    //                         // move to waiting
+    //                         status = PLAYER_STATUS_WAITING;
+    //
+    //                         // set my player status to waiting
+    //                         db.collection("players").doc(id).update({
+    //                           status: PLAYER_STATUS_WAITING
+    //                         })
+    //                         .then(function() {
+    //                           console.log("Player status set to waiting after game pause.");
+    //                         })
+    //                         .catch(function(error) {
+    //                           console.error("Error Player status set to waiting after game pause.", error);
+    //                         });
+    //
+    //                         // set waiting queue to just me
+    //                         var tempList = new Array;
+    //                         tempList.push(id);
+    //
+    //                         db.collection("queues").doc("waiting").set({
+    //                             players: tempList
+    //                           })
+    //                           .then(function() {
+    //                             console.log("db setting waiting queue after pause success");
+    //                           })
+    //                           .catch(function(error) {
+    //                             console.error("db setting waiting queue after pause failed", error);
+    //                           });
+    //
+    //                         renderGame(PLAYER_STATUS_WAITING);
+    //
+    //                     } // end if player is active
+    //
+    //                     break;
+    //
+    //                 case GAME_STATUS_NOT_STARTED:
+    //                     // logoffUser();
+    //                     break;
+    //
+    //                 default:
+    //
+    //               }
+    //           }
+    //
+    //       } // end if doc exists
+    //       else
+    //       {
+    //         postMessage(MESSAGE_TEXT_FATAL_ERROR);
+    //         postError(SYSTEM_ID,ERROR_GAME_DATA_REF_DOESNT_EXIST);
+    //         console.log("Game data doc was deleted in subscribe.");
+    //       }
+    //   });
+    //
+    //
+    //
+    //
+    // }
+
+
     // --------------------------------------------------------------------------
     // subscribe to change in game status **************  Subscribe *************
     //
@@ -724,9 +856,9 @@ logInButton.addEventListener('click', function (e)
           // create listener on my player record, change in status is important **************  Subscribe *************
           playerUnsubscribe = playerRef.onSnapshot(function(doc)
           {
-                // removed Workaround code with unsubscribe working - Only handle a call if player name is mine, not an old log in
-                //if ((doc.exists) && (doc.data().name == name))
-                if (doc.exists)
+                // put workaround back in - removed Workaround code with unsubscribe working - Only handle a call if player name is mine, not an old log in
+                if ((doc.exists) && (doc.data().name == name))
+                //if (doc.exists)
                 {
                     console.log("Listener snapshot called player doc exists name is: " + doc.data().name + " - My name is " + name + "- current status is " + decodePlayerStatus(status) + " - incoming status is " + decodePlayerStatus(doc.data().status));
 
@@ -811,7 +943,8 @@ logInButton.addEventListener('click', function (e)
                               linkUnsubscribe = myLinkRef.onSnapshot(function(doc)
                               {
                                     // console.log("My link listener called on the way in - within Log In.");
-                                    if (doc.exists)  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
+                                    if ((doc.exists) && (Number(doc.id) == Number(id)))  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
+                                    //if (doc.exists)  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
                                     {
                                         console.log("My link listener called - Doc exists - within waiting to queue change");
 
@@ -1041,7 +1174,8 @@ logInButton.addEventListener('click', function (e)
                     // 2 of 2 places in code for this subscribe.  This one is Log In and Active.
                     linkUnsubscribe = myLinkRef.onSnapshot(function(doc)
                     {
-                        if (doc.exists)
+                      if ((doc.exists) && (Number(doc.id) == Number(id)))  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
+                      //if (doc.exists)  // Only process something if doc exists, otherwise, my link was deleted and I don't care, I'm also listening to my status
                         {
                             console.log("My link listener called - Doc exists - My id is " + id + " Subscriber id is " + doc.id);
 
@@ -1076,6 +1210,7 @@ logInButton.addEventListener('click', function (e)
                                 {
                                     if (doc.exists)
                                     {
+                                        // zzzz
                                         console.log("Doc exists for my target - My targetsPlayerREf.get - Name is " + doc.data().name);
 
                                         // target = doc.data().name;  // not sure if I need this
@@ -1178,8 +1313,9 @@ function logoffUser()
     //  detach from listeners
     playerUnsubscribe();
 
-    console.log("Game Data Unsubscribe called.");
-    gameDataUnsubscribe();
+    // console.log("Game Data Unsubscribe called.");
+    // gameDataUnsubscribe();
+    // gameDataUnsubscribe = "";
 
     if (status == PLAYER_STATUS_ACTIVE)
     {
